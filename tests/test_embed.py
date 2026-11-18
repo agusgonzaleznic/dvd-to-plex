@@ -192,7 +192,7 @@ class Refusals(Base):
         self.assert_unchanged()
 
     def test_embedding_twice_or_after_a_stop_is_refused(self):
-        self.assertEqual(cli("embed", self.work, "--files", "title_02")[0], 0)
+        self.assertEqual(cli("embed", self.work, "--files", "title_02.mkv")[0], 0, "a name with .mkv works")
         self.refused("--files", "title_02", want="title_02.mkv has its text tracks already")
         path = self.work / "embed" / "title_02" / "report.json"
         report = json.loads(path.read_text(encoding="utf-8"))

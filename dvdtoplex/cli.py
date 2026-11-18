@@ -101,10 +101,16 @@ def _remux(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _names(text: str | None) -> list[str]:
+    """The --files list: names of files in WORK/out, comma-separated, with or without .mkv."""
+    names = [s.strip() for s in (text or "").split(",") if s.strip()]
+    return [n[:-4] if n.lower().endswith(".mkv") else n for n in names]
+
+
 def _ocr(args: argparse.Namespace) -> int:
     files = sorted((args.work / "out").glob("*.mkv"))
     if args.files:
-        wanted = {s.strip() for s in args.files.split(",") if s.strip()}
+        wanted = set(_names(args.files))
         if unknown := wanted - {f.stem for f in files}:
             print(f"dvd-to-plex: not in {args.work / 'out'}: {', '.join(sorted(unknown))}", file=sys.stderr)
             return 1
@@ -158,7 +164,7 @@ def _assemble(args: argparse.Namespace) -> int:
 
 
 def _embed(args: argparse.Namespace) -> int:
-    files = [s.strip() for s in args.files.split(",") if s.strip()] if args.files else None
+    files = _names(args.files) or None
     try:
         reports = embed.embed(args.work, files)
     except (embed.EmbedError, namer.PlaceError, media.MediaError, OSError, ValueError) as e:
@@ -254,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
                                         "and reads it twice (as is; twice the size without language correction) "
                                         "into WORK/ocr/<file>/s<N>.json. Exit status: 0 read, 1 an error.")
     p.add_argument("work", type=pathlib.Path, help="work folder holding out/ (as written by remux)")
-    p.add_argument("--files", help="file names in WORK/out to read, e.g. title_01,title_02 (default: all)")
+    p.add_argument("--files", help="file names in WORK/out to read, e.g. title_01,title_02 (.mkv optional; default: all)")
     p.add_argument("--lang", metavar="LANG", help="two-letter language for every track, instead of its tag")
     p.set_defaults(run=_ocr)
     p = commands.add_parser("review-prep", help="cut the OCR text into proofreading chunks with planted controls",
@@ -282,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
                                         "it replaces the original, which moves to WORK/retired-YYYY-MM-DD/. "
                                         "Exit status: 0 every file done, 1 a file failed its checks or an error.")
     p.add_argument("work", type=pathlib.Path, help="work folder holding out/, remux/ and subs/")
-    p.add_argument("--files", help="file names in WORK/out, e.g. title_02,title_03 (default: every file with an SRT)")
+    p.add_argument("--files", help="file names in WORK/out, e.g. title_02,title_03 (.mkv optional; default: every file with an SRT)")
     p.set_defaults(run=_embed)
     p = commands.add_parser("name", help="move WORK/out's files into a Plex library under plex-renamer's names",
                             description=NAMES_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)

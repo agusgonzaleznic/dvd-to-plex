@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from dvdtoplex import __version__
-from dvdtoplex.cli import main
+from dvdtoplex.cli import _names, main
 
 
 class Cli(unittest.TestCase):
@@ -16,6 +16,10 @@ class Cli(unittest.TestCase):
             main(["--version"])
         self.assertEqual(exit_.exception.code, 0)
         self.assertEqual(out.getvalue().strip(), f"dvd-to-plex {__version__}")
+
+    def test_files_take_names_with_or_without_mkv(self):
+        self.assertEqual(_names(" title_01.mkv, title_02 ,,TITLE_03.MKV"), ["title_01", "title_02", "TITLE_03"])
+        self.assertEqual(_names(None), [])
 
     def test_no_arguments_prints_help(self):
         out = io.StringIO()
