@@ -4,8 +4,8 @@ import json
 import pathlib
 import sys
 
-from dvdtoplex import (__version__, copier, ifo, media, namer, ocr, parts, remux, sample, scramble,
-                       source, survey, swiftc, verifier)
+from dvdtoplex import (__version__, assemble, copier, ifo, media, namer, ocr, parts, remux, review,
+                       sample, scramble, source, survey, swiftc, verifier)
 
 # Exit codes: 0 done, 1 an error, 3 refused because the disc is scrambled.
 REFUSED = 3
@@ -125,6 +125,38 @@ def _ocr(args: argparse.Namespace) -> int:
     return 0
 
 
+def _review_prep(args: argparse.Namespace) -> int:
+    try:
+        if args.redo:
+            entry = review.redo(args.work, args.redo, plants=args.plants)
+            print(f"{args.redo}: attempt {entry['attempt']}, {entry['plants']} controls; earlier answers kept "
+                  f"as answers.attempt{entry['attempt'] - 1}.json")
+            return 0
+        for s in review.prepare(args.work, size=args.chunk, plants=args.plants):
+            print(f"{s['track']}: {len(s['chunks'])} chunks in {args.work / 'review' / s['track']}, "
+                  f"{sum(c['plants'] for c in s['chunks'])} controls")
+    except (review.ReviewError, OSError, ValueError) as e:
+        print(f"dvd-to-plex: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _assemble(args: argparse.Namespace) -> int:
+    try:
+        reports = assemble.assemble(args.work)
+    except (assemble.AssembleError, review.ReviewError, OSError, ValueError, KeyError) as e:
+        print(f"dvd-to-plex: {e}", file=sys.stderr)
+        return 1
+    for r in reports:
+        for c in r["chunks"]:
+            if not c["ok"]:
+                print(f"{r['track']} chunk {c['chunk']}: {c['failed']} of {c['controls']} controls failed; "
+                      f"redo it one model up (review-prep --redo {r['track']}/{c['chunk']})", file=sys.stderr)
+        if r["ok"]:
+            print(f"{r['track']}: every control restored; {r['cues']} cues in {args.work / r['srt']}")
+    return 0 if all(r["ok"] for r in reports) else 1
+
+
 def _name(args: argparse.Namespace) -> int:
     try:
         record = namer.place(args.work, args.library, args.names or args.work / "names.json",
@@ -205,6 +237,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--files", help="file names in WORK/out to read, e.g. title_01,title_02 (default: all)")
     p.add_argument("--lang", metavar="LANG", help="two-letter language for every track, instead of its tag")
     p.set_defaults(run=_ocr)
+    p = commands.add_parser("review-prep", help="cut the OCR text into proofreading chunks with planted controls",
+                            description="Writes WORK/review/<file>.s<N>/chunk_NN/ with cues.json and contact "
+                                        "sheets; the proofreader answers in chunk_NN/answers.json as "
+                                        '{"cues": [{"n": 1, "text": "...", "note": ""}]}. The key goes to '
+                                        "DVDTOPLEX_KEYS or ~/Library/Application Support/dvd-to-plex/keys, "
+                                        "outside the work folder. Exit status: 0 prepared, 1 an error.")
+    p.add_argument("work", type=pathlib.Path, help="work folder holding ocr/ (as written by ocr)")
+    p.add_argument("--chunk", type=int, default=review.CHUNK, help=f"cues per chunk (default {review.CHUNK})")
+    p.add_argument("--plants", type=int, default=review.PLANTS,
+                   help=f"controls planted per chunk (default {review.PLANTS})")
+    p.add_argument("--redo", metavar="TRACK/N", help="fresh controls for one chunk, e.g. title_01.s0/3")
+    p.set_defaults(run=_review_prep)
+    p = commands.add_parser("assemble", help="score the proofreading against its controls and write the SRTs",
+                            description="Only a chunk whose every control was restored passes; a track whose "
+                                        "chunks all pass is written to WORK/subs/<file>.s<N>.<lang>.srt. "
+                                        "Exit status: 0 every chunk passed, 1 a chunk failed or an error.")
+    p.add_argument("work", type=pathlib.Path, help="work folder holding review/ (as written by review-prep)")
+    p.set_defaults(run=_assemble)
     p = commands.add_parser("name", help="move WORK/out's files into a Plex library under plex-renamer's names",
                             description=NAMES_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("work", type=pathlib.Path, help="work folder holding out/ and remux/ (as written by remux)")
