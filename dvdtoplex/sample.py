@@ -18,8 +18,9 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
-from importlib import resources
 from xml.sax.saxutils import quoteattr
+
+from dvdtoplex import swiftc
 
 WIDTH, HEIGHT, FPS = 720, 576, 25
 
@@ -82,11 +83,10 @@ def _clock(seconds: float) -> str:
 
 
 def _renderer(work: pathlib.Path) -> pathlib.Path:
-    binary = work / "render_text"
-    source = resources.files("dvdtoplex") / "swift" / "render_text.swift"
-    with resources.as_file(source) as path:
-        _run(["swiftc", "-O", str(path), "-o", str(binary)])
-    return binary
+    try:
+        return swiftc.build("render_text", work)
+    except swiftc.SwiftError as e:
+        raise SampleError(str(e)) from e
 
 
 def _encode(title: dict, out: pathlib.Path) -> None:

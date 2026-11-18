@@ -4,8 +4,8 @@ import json
 import pathlib
 import sys
 
-from dvdtoplex import (__version__, copier, ifo, namer, parts, remux, sample, scramble, source,
-                       survey, verifier)
+from dvdtoplex import (__version__, copier, ifo, media, namer, ocr, parts, remux, sample, scramble,
+                       source, survey, swiftc, verifier)
 
 # Exit codes: 0 done, 1 an error, 3 refused because the disc is scrambled.
 REFUSED = 3
@@ -101,6 +101,30 @@ def _remux(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _ocr(args: argparse.Namespace) -> int:
+    files = sorted((args.work / "out").glob("*.mkv"))
+    if args.files:
+        wanted = {s.strip() for s in args.files.split(",") if s.strip()}
+        if unknown := wanted - {f.stem for f in files}:
+            print(f"dvd-to-plex: not in {args.work / 'out'}: {', '.join(sorted(unknown))}", file=sys.stderr)
+            return 1
+        files = [f for f in files if f.stem in wanted]
+    try:
+        for mkv in files:
+            results = ocr.ocr_file(mkv, args.work, language=args.lang)
+            if not results:
+                print(f"{mkv.stem}: no disc subtitles")
+            for r in results:
+                read = [c for c in r["cues"] if "first" in c]
+                print(f"{mkv.stem} s{r['track']} ({r['language']}): {len(read)} cues read, "
+                      f"{sum(c['agree'] for c in read)} where both readings agree"
+                      + (f", {len(r['cues']) - len(read)} units not decoded" if len(read) < len(r["cues"]) else ""))
+    except (ocr.OcrError, swiftc.SwiftError, media.MediaError, OSError, ValueError) as e:
+        print(f"dvd-to-plex: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _name(args: argparse.Namespace) -> int:
     try:
         record = namer.place(args.work, args.library, args.names or args.work / "names.json",
@@ -173,6 +197,14 @@ def main(argv: list[str] | None = None) -> int:
                    help="without --titles, skip titles shorter than this (default 5)")
     p.add_argument("--prefer-audio", metavar="LANG", help="two-letter language to make the default audio")
     p.set_defaults(run=_remux)
+    p = commands.add_parser("ocr", help="read the disc subtitles of WORK/out's files as text with macOS Vision",
+                            description="Decodes each subtitle of each VobSub track to WORK/ocr/<file>/s<N>/NNNN.png "
+                                        "and reads it twice (as is; twice the size without language correction) "
+                                        "into WORK/ocr/<file>/s<N>.json. Exit status: 0 read, 1 an error.")
+    p.add_argument("work", type=pathlib.Path, help="work folder holding out/ (as written by remux)")
+    p.add_argument("--files", help="file names in WORK/out to read, e.g. title_01,title_02 (default: all)")
+    p.add_argument("--lang", metavar="LANG", help="two-letter language for every track, instead of its tag")
+    p.set_defaults(run=_ocr)
     p = commands.add_parser("name", help="move WORK/out's files into a Plex library under plex-renamer's names",
                             description=NAMES_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("work", type=pathlib.Path, help="work folder holding out/ and remux/ (as written by remux)")
