@@ -27,9 +27,10 @@ def verify(work: pathlib.Path) -> dict:
     problems = []
     for f in record["files"]:
         dst = library / f["dst"]
-        report = namer.checked(work, f["stem"])
-        if report is None or report.get("sha256") != f["sha256"]:
-            problems.append(f"{f['stem']}: name.json does not match its passing remux or embed report")
+        if f.get("role") != "subtitle":                       # a sidecar's hash is name.json's own
+            report = namer.checked(work, f["stem"])
+            if report is None or report.get("sha256") != f["sha256"]:
+                problems.append(f"{f['stem']}: name.json does not match its passing remux or embed report")
         if not f.get("placed"):
             problems.append(f"{f['dst']}: never moved (the name run stopped before it)")
         elif not dst.is_file():

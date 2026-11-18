@@ -2,7 +2,9 @@
 
 A names file says what each file in WORK/out is: the film (or one part of it), an extra with its
 Plex extras folder and label, or skip. Every file in WORK/out must be listed, so none is left
-behind unnoticed. Before anything moves, each file is hashed against its remux report (or its
+behind unnoticed. The film's SRTs in WORK/subs go beside it as sidecars (<film>.<lang>.srt,
+.forced when its disc track was forced); an extra's must be embedded first, because Plex ignores
+sidecar subtitles next to a local extra. Before anything moves, each file is hashed against its remux report (or its
 embed report, once embed added text tracks), and the
 planned names are laid out as sparse files and run through plex-renamer's own scan, classify and
 plan: it must read back the same title, year, id and edition and want to rename nothing.
@@ -19,9 +21,10 @@ import tempfile
 from plexrenamer import classify, naming, scan, util
 from plexrenamer.planner import Planner
 
-from dvdtoplex import copier
+from dvdtoplex import copier, lang, media
 
 STEM = re.compile(r"^title_(\d{2})(?:_part(\d+))?$")
+SRT = re.compile(r"^(?P<file>.+)\.s(?P<stream>\d+)\.(?P<lang>[a-z]{2})\.srt$")
 IDS = {"imdb": re.compile(r"^tt\d{7,10}$"), "tmdb": re.compile(r"^\d{1,10}$")}
 ROLES = ("movie", "extra", "skip")
 FOLDERS = sorted(set(util.EXTRAS_DIRS.values()))
@@ -88,6 +91,43 @@ def checked(work: pathlib.Path, stem: str) -> dict | None:
     return embedded
 
 
+def srts(work: pathlib.Path, stem: str) -> list[tuple[pathlib.Path, int, str]]:
+    """(path, disc subtitle stream, two-letter language) of each WORK/subs/<stem>.s<N>.<lang>.srt."""
+    found = []
+    for p in sorted((work / "subs").glob(f"{stem}.s*.srt")):
+        if (m := SRT.match(p.name)) and m["file"] == stem:
+            found.append((p, int(m["stream"]), m["lang"]))
+    return found
+
+
+def sidecar_names(video_stem: str, tracks: list[tuple[str, bool]]) -> list[str]:
+    """Plex sidecar names for VIDEO_STEM, one per (language, forced): the two-letter code, then the
+    three-letter one when a language and flag repeat, as plex-renamer itself would name them."""
+    names: list[str] = []
+    for code, forced in tracks:
+        options = [naming.subtitle_file(video_stem, c, forced) for c in (code, lang.matroska(code))]
+        free = [n for n in options if n.lower() not in {x.lower() for x in names}]
+        if not free:
+            raise PlaceError(f"more than two {code}{' forced' if forced else ''} subtitles for {video_stem}; "
+                             "keep at most two in WORK/subs")
+        names.append(free[0])
+    return names
+
+
+def _sidecars(work: pathlib.Path, stem: str, video_rel: str) -> list[dict]:
+    found = srts(work, stem)
+    forced = [bool(s.get("disposition", {}).get("forced")) for s in media.streams(work / "out" / f"{stem}.mkv")
+              if s.get("codec_type") == "subtitle"] if found else []
+    for p, n, _ in found:
+        if n >= len(forced):
+            raise PlaceError(f"{p.name}: {stem}.mkv has no subtitle stream {n}")
+    folder, video_stem = video_rel.rsplit("/", 1)[0], pathlib.PurePosixPath(video_rel).stem
+    names = sidecar_names(video_stem, [(code, forced[n]) for _, n, code in found])
+    return [{"stem": stem, "role": "subtitle", "src": f"subs/{p.name}", "dst": f"{folder}/{name}",
+             "bytes": p.stat().st_size, "sha256": copier.sha256_file(p), "placed": False}
+            for (p, _, _), name in zip(found, names)]
+
+
 def plan(work: pathlib.Path, library: pathlib.Path, names: dict) -> dict:
     """The record of what goes where, checked against the remux (or embed) reports and plex-renamer."""
     if not isinstance(names, dict) or not isinstance(names.get("files"), dict):
@@ -130,17 +170,25 @@ def plan(work: pathlib.Path, library: pathlib.Path, names: dict) -> dict:
                 raise PlaceError(f"names: {stem}: 'folder' must be one of {', '.join(FOLDERS)}")
             label = _text(entry, "label", f"names: {stem}")
             rel = f"{category}/{folder}/{kind}/{naming.extras_file(kind, label, '.mkv')}"
-        if rel.lower() in taken:
-            raise PlaceError(f"names: two files would be named {rel}")
-        taken.add(rel.lower())
         report = checked(work, stem)
         if report is None:
             raise PlaceError(f"{stem}: no passing remux report with a SHA-256 at "
                              f"{work / 'remux' / stem / 'report.json'}, or its embed report does not follow it")
-        if (library / rel).exists():
-            raise PlaceError(f"{library / rel} already exists; nothing was moved")
-        files.append({"stem": stem, "role": roles[stem], "dst": rel, "bytes": report["bytes"],
-                      "sha256": report["sha256"], "placed": False})
+        entries = [{"stem": stem, "role": roles[stem], "src": f"out/{stem}.mkv", "dst": rel,
+                    "bytes": report["bytes"], "sha256": report["sha256"], "placed": False}]
+        if not report.get("replaced") and srts(work, stem):          # not embedded, SRTs waiting
+            if roles[stem] == "extra":
+                raise PlaceError(f"{stem} is an extra with SRTs in {work / 'subs'}; Plex ignores sidecar "
+                                 f"subtitles next to a local extra, so embed them first "
+                                 f"(dvd-to-plex embed WORK --files {stem})")
+            entries += _sidecars(work, stem, rel)
+        for e in entries:
+            if e["dst"].lower() in taken:
+                raise PlaceError(f"names: two files would be named {e['dst']}")
+            taken.add(e["dst"].lower())
+            if (library / e["dst"]).exists():
+                raise PlaceError(f"{library / e['dst']} already exists; nothing was moved")
+        files += entries
     record = {"library": str(library.resolve()), "category": category, "folder": folder,
               "info": {"title": info.title, "year": info.year, "ids": info.ids, "editions": info.editions},
               "files": files}
@@ -214,15 +262,15 @@ def place(work: pathlib.Path, library: pathlib.Path, names_file: pathlib.Path, *
         raise PlaceError(f"{log} exists: these files were named already, or a run stopped part "
                          "way; it lists every move")
     for f in record["files"]:
-        if copier.sha256_file(work / "out" / f"{f['stem']}.mkv") != f["sha256"]:
-            raise PlaceError(f"{f['stem']}.mkv changed since it was checked; nothing was moved")
+        if copier.sha256_file(work / f["src"]) != f["sha256"]:
+            raise PlaceError(f"{f['src']} changed since it was checked; nothing was moved")
 
     def save() -> None:
         log.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     save()
     for f in record["files"]:
-        _move(work / "out" / f"{f['stem']}.mkv", library / f["dst"], f["sha256"])
+        _move(work / f["src"], library / f["dst"], f["sha256"])
         f["placed"] = True
         save()
     return record
