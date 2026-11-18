@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">dvd-to-plex emblem: a disc with a play mark at its centre and a highlighted track</title>
+  <rect width="256" height="256" rx="56" fill="#1A1D23"/>
+  <circle cx="128" cy="128" r="86" fill="none" stroke="#FAFAFA" stroke-width="10"/>
+  <path d="M75.4 108.8 A56 56 0 0 1 147.2 75.4" fill="none" stroke="#DE3412" stroke-width="10" stroke-linecap="round"/>
+  <path d="M118 112 L118 144 L144 128 Z" fill="#FAFAFA" stroke="#FAFAFA" stroke-width="6" stroke-linejoin="round"/>
+</svg>

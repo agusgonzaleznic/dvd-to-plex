@@ -1,8 +1,13 @@
-# Tests on every pull request and every push to main, on macOS, where the tool runs. The tests need
-# ffmpeg and dvdauthor from Homebrew, swift and say from the runner image, and the hash-locked
-# requirements/runtime.txt.
+# Tests on every pull request and every push to main, on macOS, where the tool runs, and the
+# package built as a release builds it. The tests need ffmpeg and dvdauthor from Homebrew, swift
+# and say from the runner image, and the hash-locked requirements/runtime.txt. All jobs run in the
+# shared reusable workflows, pinned to full commit SHAs with the release in a comment; lint.yml
+# proves each pin.
 #
-# There is no release job yet: nothing is published while the repository is private.
+# A merge to main is the release. On a pull request, "Release / Check the version" fails a change to
+# what ships unless __version__ in dvdtoplex/__init__.py is newer than every release. On main,
+# once the tests and the build pass, the Release job tags that version when it is new and runs
+# release.yml on the tag, which publishes to GitHub and PyPI. Nobody pushes a tag by hand.
 
 name: CI
 
@@ -14,11 +19,16 @@ on:
 permissions:
   contents: read
 
+# A pull request cancels its older runs. Runs on main never cancel a running one: it may be
+# tagging a version and waiting for its release.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The job names here are half of the main ruleset's required checks ("Tests / Python 3.12",
+  # "Package build / Build sdist and wheel", "Release / Check the version"): renaming one is a
+  # breaking change.
   tests:
     name: Tests
     uses: agusgonzaleznic/github-reusable-workflows/.github/workflows/python-tests.yml@0938feb26149788717c639af3d1cf1f3a96ca2c8 # v1.12.0
@@ -30,3 +40,48 @@ jobs:
       brew-packages: ffmpeg dvdauthor
       timeout-minutes: 30
       test-command: .venv/bin/python -m unittest discover -s tests -v
+
+  package:
+    name: Package build
+    # The build release.yml runs, on every change, so a stale requirements/build.txt or a broken
+    # build fails a pull request instead of a release (a v* tag can never move).
+    uses: agusgonzaleznic/github-reusable-workflows/.github/workflows/python-build.yml@0938feb26149788717c639af3d1cf1f3a96ca2c8 # v1.12.0
+    with:
+      build-constraints: requirements/build.txt
+
+  # A change to what users get needs a new version: the package (the Swift OCR source included),
+  # its metadata, and README.md and LICENSE, which PyPI shows and the sdist carries. Tests, the
+  # plugin, docs and workflows ship with the next version. The version is the one the package
+  # build read from the built wheel.
+  check-version:
+    name: Release
+    if: github.event_name == 'pull_request'
+    needs: package
+    uses: agusgonzaleznic/github-reusable-workflows/.github/workflows/version-tag.yml@0938feb26149788717c639af3d1cf1f3a96ca2c8 # v1.12.0
+    permissions:
+      contents: read
+    with:
+      version: ${{ needs.package.outputs.version }}
+      release-paths: |
+        dvdtoplex/
+        pyproject.toml
+        README.md
+        LICENSE
+
+  # Tags the version on the merge when it is new, then runs release.yml on the tag and waits for
+  # it. A release that fails turns this run red.
+  release:
+    name: Release
+    if: github.event_name == 'push'
+    needs: [tests, package]
+    uses: agusgonzaleznic/github-reusable-workflows/.github/workflows/version-tag.yml@0938feb26149788717c639af3d1cf1f3a96ca2c8 # v1.12.0
+    permissions:
+      contents: write
+      actions: write
+    with:
+      version: ${{ needs.package.outputs.version }}
+      release-paths: |
+        dvdtoplex/
+        pyproject.toml
+        README.md
+        LICENSE
