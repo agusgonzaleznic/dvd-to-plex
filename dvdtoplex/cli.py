@@ -4,8 +4,8 @@ import json
 import pathlib
 import sys
 
-from dvdtoplex import (__version__, assemble, copier, ifo, media, namer, ocr, parts, remux, review,
-                       sample, scramble, source, survey, swiftc, verifier)
+from dvdtoplex import (__version__, assemble, copier, embed, ifo, media, namer, ocr, parts, remux,
+                       review, sample, scramble, source, survey, swiftc, verifier)
 
 # Exit codes: 0 done, 1 an error, 3 refused because the disc is scrambled.
 REFUSED = 3
@@ -157,6 +157,24 @@ def _assemble(args: argparse.Namespace) -> int:
     return 0 if all(r["ok"] for r in reports) else 1
 
 
+def _embed(args: argparse.Namespace) -> int:
+    files = [s.strip() for s in args.files.split(",") if s.strip()] if args.files else None
+    try:
+        reports = embed.embed(args.work, files)
+    except (embed.EmbedError, namer.PlaceError, media.MediaError, OSError, ValueError) as e:
+        print(f"dvd-to-plex: {e}", file=sys.stderr)
+        return 1
+    for r in reports:
+        if r["ok"]:
+            print(f"{r['file']}: {len(r['tracks'])} text track{'s' if len(r['tracks']) != 1 else ''} added "
+                  f"({', '.join(t['language'] for t in r['tracks'])}); the original is in "
+                  f"{args.work / r['original']['retired']}")
+        else:
+            print(f"{r['file']}: not changed, the new file failed its checks: " + "; ".join(r["problems"]),
+                  file=sys.stderr)
+    return 0 if all(r["ok"] for r in reports) else 1
+
+
 def _name(args: argparse.Namespace) -> int:
     try:
         record = namer.place(args.work, args.library, args.names or args.work / "names.json",
@@ -178,7 +196,7 @@ def _verify(args: argparse.Namespace) -> int:
         return 1
     for problem in result["problems"]:
         print(problem, file=sys.stderr)
-    print(f"{result['folder']}: " + ("ok, every file as remux checked it" if result["ok"] else
+    print(f"{result['folder']}: " + ("ok, every file as it was checked" if result["ok"] else
                                      f"{len(result['problems'])} problems; see {args.work / 'verify.json'}"))
     return 0 if result["ok"] else 1
 
@@ -255,6 +273,15 @@ def main(argv: list[str] | None = None) -> int:
                                         "Exit status: 0 every chunk passed, 1 a chunk failed or an error.")
     p.add_argument("work", type=pathlib.Path, help="work folder holding review/ (as written by review-prep)")
     p.set_defaults(run=_assemble)
+    p = commands.add_parser("embed", help="add the SRTs to their MKV as text tracks, the original kept",
+                            description="Adds WORK/subs/<file>.s<N>.<lang>.srt to WORK/out/<file>.mkv as SubRip "
+                                        "tracks, every other stream copied as it is. The new file must keep every "
+                                        "original stream's packets and properties and read back as its SRTs before "
+                                        "it replaces the original, which moves to WORK/retired-YYYY-MM-DD/. "
+                                        "Exit status: 0 every file done, 1 a file failed its checks or an error.")
+    p.add_argument("work", type=pathlib.Path, help="work folder holding out/, remux/ and subs/")
+    p.add_argument("--files", help="file names in WORK/out, e.g. title_02,title_03 (default: every file with an SRT)")
+    p.set_defaults(run=_embed)
     p = commands.add_parser("name", help="move WORK/out's files into a Plex library under plex-renamer's names",
                             description=NAMES_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("work", type=pathlib.Path, help="work folder holding out/ and remux/ (as written by remux)")
