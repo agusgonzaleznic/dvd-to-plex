@@ -1,13 +1,17 @@
 """The synthetic sample disc, built once per test run and shared by every test module."""
 import atexit
 import collections
+import contextlib
+import io
 import pathlib
 import subprocess
 import tempfile
 
 from dvdtoplex import sample
+from dvdtoplex.cli import main
 
 _built: tuple[pathlib.Path, dict] | None = None
+_remuxed: pathlib.Path | None = None
 
 
 def sample_disc() -> tuple[pathlib.Path, dict]:
@@ -20,6 +24,25 @@ def sample_disc() -> tuple[pathlib.Path, dict]:
         truth = sample.build(root)
         _built = (root / "VIDEO_TS", truth)
     return _built
+
+
+def remuxed_work() -> pathlib.Path:
+    """A work folder holding the sample disc's copy and its three titles remuxed, built once per
+    run. Tests copy what they change out of it."""
+    global _remuxed
+    if _remuxed is None:
+        video_ts, _ = sample_disc()
+        tmp = tempfile.TemporaryDirectory(prefix="dvdtoplex-remuxed-")
+        atexit.register(tmp.cleanup)
+        work = pathlib.Path(tmp.name) / "work"
+        for args in (["copy", video_ts, work], ["remux", work, "--titles", "1,2,3"]):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                code = main([str(a) for a in args])
+            if code != 0:
+                raise RuntimeError(f"{args[0]} failed on the sample:\n{out.getvalue()}")
+        _remuxed = work
+    return _remuxed
 
 
 def rendered_colours(ifo_file: pathlib.Path, vob: pathlib.Path, seconds: float) -> collections.Counter:

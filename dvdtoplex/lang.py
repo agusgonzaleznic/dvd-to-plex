@@ -27,3 +27,11 @@ def matroska(code: str) -> str:
 
 def name(code: str) -> str:
     return NAMES.get(code.lower(), "Unknown language")
+
+
+def two_letter(code: str) -> str | None:
+    """'ger' or 'de' -> 'de'; None for an unknown or undetermined code."""
+    code = code.lower()
+    if code in ISO639_2B:
+        return code
+    return next((k for k, v in ISO639_2B.items() if v == code), None)

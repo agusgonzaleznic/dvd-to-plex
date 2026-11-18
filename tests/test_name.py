@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from disc import sample_disc
+from disc import remuxed_work
 from dvdtoplex import copier, namer
 from dvdtoplex.cli import main
 
@@ -45,13 +45,7 @@ def flip(p: pathlib.Path, at: int = 5000) -> None:
 class Base(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        video_ts, _ = sample_disc()
-        tmp = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(tmp.cleanup)
-        cls.remuxed = pathlib.Path(tmp.name) / "work"
-        for args in (("copy", video_ts, cls.remuxed), ("remux", cls.remuxed, "--titles", "1,2,3")):
-            code, out, err = cli(*args)
-            assert code == 0, out + err
+        cls.remuxed = remuxed_work()
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
