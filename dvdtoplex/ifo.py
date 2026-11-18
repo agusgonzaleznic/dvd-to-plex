@@ -131,6 +131,20 @@ def _u32(d: bytes, o: int) -> int:
     return struct.unpack_from(">I", d, o)[0]
 
 
+def _malformed(name: str):
+    """Turn a read past the end of a truncated or malformed IFO into an IfoError."""
+    def wrap(fn):
+        def inner(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except (struct.error, IndexError) as e:
+                raise IfoError(f"{name} is truncated or malformed ({e})") from e
+        inner.__doc__, inner.__name__ = fn.__doc__, fn.__name__
+        return inner
+    return wrap
+
+
+@_malformed("VIDEO_TS.IFO")
 def read_vmg(video_ts: pathlib.Path) -> list[Title]:
     """The disc's title table (TT_SRPT) from VIDEO_TS.IFO."""
     d = (video_ts / "VIDEO_TS.IFO").read_bytes()
@@ -173,6 +187,7 @@ def _pgc(d: bytes, base: int, number: int) -> Pgc:
                palette_ycrcb=palette, program_cells=program_cells, cells=cells)
 
 
+@_malformed("a VTS IFO")
 def read_vts(video_ts: pathlib.Path, number: int) -> TitleSet:
     d = (video_ts / f"VTS_{number:02d}_0.IFO").read_bytes()
     if d[:12] != b"DVDVIDEO-VTS":
