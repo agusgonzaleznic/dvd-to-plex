@@ -10,6 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+dependencies = ["plex-renamer>=1.0.2,<2"]
 authors = [{ name = "Agustin Gonzalez Nicolini" }]
 keywords = ["dvd", "mkv", "remux", "plex", "subtitles"]
 classifiers = [

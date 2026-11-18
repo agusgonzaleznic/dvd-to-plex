@@ -13,7 +13,7 @@ import json
 import pathlib
 import shutil
 
-from dvdtoplex import lang, media, scramble, vob
+from dvdtoplex import copier, lang, media, scramble, vob
 from dvdtoplex.parts import WRAP, Part
 from dvdtoplex.survey import TitleInfo
 
@@ -185,6 +185,7 @@ def remux(video_ts: pathlib.Path, info: TitleInfo, part: Part, work: pathlib.Pat
     if report["ok"]:
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(final), str(out))
+        report["bytes"], report["sha256"] = out.stat().st_size, copier.sha256_file(out)
         for f in [cut, stage1, *[x for sf in sub_files for x in sf[2:4]]]:
             f.unlink(missing_ok=True)
     (work / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n",

@@ -1,0 +1,6 @@
+# plex-renamer pinned with its hashes, as CI installs it (pip --require-hashes --no-deps).
+# Regenerate with the command in runtime.in.
+plex-renamer==1.0.2 \
+    --hash=sha256:08a460058c3160ac7ce1116fd5644f77a4280b7d7bf38292e670c3345729afcb \
+    --hash=sha256:a1a19f65e341d39f8dbea8e7a13f6a08e8af5c47af2a5abf9c9b4b0fc25b8068
+    # via -r requirements/runtime.in

@@ -1,0 +1,7 @@
+# What dvd-to-plex needs at run time: plex-renamer, for the Plex naming rules and the read-back
+# check. Regenerate runtime.txt after changing this file, leaving out releases younger than a
+# week, as Dependabot's cooldown does for actions:
+#   uv pip compile requirements/runtime.in --universal --generate-hashes --python-version 3.12 \
+#     --exclude-newer <the date a week ago> --no-header -o requirements/runtime.txt
+# plex-renamer is maintained alongside this project, so its releases are taken without the wait.
+plex-renamer>=1.0.2,<2

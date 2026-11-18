@@ -1,5 +1,6 @@
 # Tests on every pull request and every push to main, on macOS, where the tool runs. The tests need
-# ffmpeg and dvdauthor from Homebrew, and swift and say from the runner image.
+# ffmpeg and dvdauthor from Homebrew, swift and say from the runner image, and the hash-locked
+# requirements/runtime.txt.
 #
 # There is no release job yet: nothing is published while the repository is private.
 
@@ -24,7 +25,8 @@ jobs:
     with:
       runs-on: macos-15
       python-versions: '["3.12", "3.13"]'
-      install-requirements: false
+      install-requirements: true
+      requirements: requirements/runtime.txt
       brew-packages: ffmpeg dvdauthor
       timeout-minutes: 30
       test-command: .venv/bin/python -m unittest discover -s tests -v
