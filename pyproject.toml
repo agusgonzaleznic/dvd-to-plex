@@ -35,4 +35,4 @@ path = "dvdtoplex/__init__.py"
 packages = ["dvdtoplex"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["dvdtoplex", "tests", "README.md", "LICENSE"]
+only-include = ["dvdtoplex", "tests", "plugin", ".claude-plugin", "README.md", "LICENSE"]

@@ -50,9 +50,9 @@ jobs:
       build-constraints: requirements/build.txt
 
   # A change to what users get needs a new version: the package (the Swift OCR source included),
-  # its metadata, and README.md and LICENSE, which PyPI shows and the sdist carries. Tests, the
-  # plugin, docs and workflows ship with the next version. The version is the one the package
-  # build read from the built wheel.
+  # its metadata, and README.md and LICENSE, which PyPI shows and the sdist carries. Tests, docs
+  # and workflows ship with the next version; the plugin is installed from main, so it changes
+  # with every merge. The version is the one the package build read from the built wheel.
   check-version:
     name: Release
     if: github.event_name == 'pull_request'

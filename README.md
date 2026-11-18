@@ -86,16 +86,16 @@ library renamed with it and one filled with dvd-to-plex follow the same rules.
 
 ## ✅ What it checks
 
-Each stage refuses to hand on work it could not check. The tests feed every stage the broken
-inputs in the last column and must see it fail, so a check that let everything through would turn
-CI red.
+Each stage refuses to hand on work it could not check. The tests feed the broken inputs in the
+last column to the stage or to its check and must see it fail, so a check that let everything
+through would turn CI red. The duration and audio offset checks have no such test yet.
 
 | Stage | What it checks | Broken inputs in its tests |
 |---|---|---|
 | `inspect` | Counts scrambled packs (up to 4096 per VOB file, or all with `--full-scan`); flags titles with several angles or interleaved cells | A cut IFO file, a scrambled pack |
 | `copy` | Reads with plain file reads only; stops at the first read error, never skips or pads; a SHA-256 per file | A read error, a scrambled pack |
-| `remux` | The copy's SHA-256 again; every pack scanned for scrambling; video and audio packets hashed and compared with the disc; duration equal to the disc's tables; audio start offset kept; a full decode with no errors; each subtitle packet's bytes and time | A copy changed after `copy`, a stream one second short, corrupted video, a subtitle shifted in time |
-| `ocr` | Each subtitle read twice, as is and at twice the size without language correction, so later stages know where the readings agree | A blank image, a damaged subtitle, and an accuracy floor on the sample |
+| `remux` | The copy's SHA-256 again, when `copy` made it; every pack scanned for scrambling; video and audio packets hashed and compared with the disc; duration equal to the disc's tables; audio start offset kept; a full decode with no errors; each subtitle packet's bytes and time | A copy changed after `copy`, a stream one second short, corrupted video, a subtitle shifted in time |
+| `ocr` | Each subtitle read twice, as is and at twice the size without language correction, so later stages know where the readings agree | A blank image, and an accuracy floor on the sample |
 | `assemble` | Each chunk's planted errors: a chunk passes only if every one was put right | A planted error kept, a line cut |
 | `embed` | Every original stream keeps its packets and properties; each new text track reads back as its SRT | A cut or retagged stream, text that doesn't read back |
 | `name` | The names read back through plex-renamer; each file matches its remux or embed report before it moves | A file changed after remux, a name plex-renamer reads differently |
@@ -115,9 +115,8 @@ dvd-to-plex finds a scrambled pack, it prints this and changes nothing:
 This disc's video is scrambled. dvd-to-plex reads only unscrambled DVD-Video, so it stops here and changes nothing.
 ```
 
-That stop is by design and will stay. The tool reads the disc with plain file reads and never
-through a library that could unscramble it, and the Claude Code plugin stops there too and
-suggests nothing. Issues asking to change this are closed.
+That stop is by design and will stay. The tool reads the disc with plain file reads only, and the
+Claude Code plugin stops there too and suggests nothing. Issues asking to change this are closed.
 
 It also never re-encodes, never fetches subtitles or metadata from the web, and never deletes a
 file you had: `embed` keeps the file it replaces in a `retired-` folder named by date.
@@ -132,7 +131,6 @@ You need a Mac, Python 3.12 or newer, and:
 |---|---|---|
 | ffmpeg and ffprobe | Remuxing and every packet check | `brew install ffmpeg` |
 | Xcode command line tools | `swiftc` builds the small subtitle reader on first use; the plugin's guard runs on their Python | `xcode-select --install` |
-| dvdauthor | Only for `dvd-to-plex sample` | `brew install dvdauthor` |
 
 Then install the command:
 
@@ -158,14 +156,17 @@ Each line of the check must end in `OK`.
 
 Try it on the sample disc before a real one. `sample` writes a small DVD-Video folder with three
 titles: a 12-second film in four chapters with German and commentary audio and German subtitles,
-and two short extras.
+and two short extras. It authors the disc with `dvdauthor` and `spumux`, which must be on your
+PATH; nothing else in the tool uses them.
 
 ```bash
-dvd-to-plex sample ~/dvd-sample
-dvd-to-plex inspect ~/dvd-sample
+cd ~
+dvd-to-plex sample dvd-sample
+dvd-to-plex inspect dvd-sample
 ```
 
 ```
+VIDEO_TS: dvd-sample/VIDEO_TS
 Standard: PAL
 Scrambled packs: 0 of 1467 checked
 
@@ -175,10 +176,10 @@ Title  Set  Length   Ch  Audio                Subtitles  Notes
 3      2    0:00:03  1   en                   -
 ```
 
-Then copy and remux into a work folder. The work folder needs free space for about twice the disc.
+Then copy and remux into a work folder. While a title is remuxed, the work folder needs free space
+for about four times the disc.
 
 ```bash
-cd ~
 dvd-to-plex copy dvd-sample dvd-work
 dvd-to-plex remux dvd-work --titles 1,2,3 --prefer-audio de
 ```
@@ -190,13 +191,13 @@ title_03: ok -> dvd-work/out/title_03.mkv
 ```
 
 For the subtitles as text, run `ocr` and `review-prep`, have each chunk proofread (the plugin does
-this for you, see below), and run `assemble`. Then describe the titles in `~/dvd-work/names.json`
+this for you, see below), and run `assemble`. Then describe the titles in `dvd-work/names.json`
 (`dvd-to-plex name --help` shows the format), and place and check them:
 
 ```bash
-dvd-to-plex name ~/dvd-work /Volumes/Media --dry-run
-dvd-to-plex name ~/dvd-work /Volumes/Media
-dvd-to-plex verify ~/dvd-work
+dvd-to-plex name dvd-work /Volumes/Media --dry-run
+dvd-to-plex name dvd-work /Volumes/Media
+dvd-to-plex verify dvd-work
 ```
 
 The sample also writes `sample-truth.json` with every subtitle line as it was written, so you can
@@ -223,8 +224,8 @@ Then ask in plain words, for example *"Add the DVD in /Volumes/MY_FILM to my Ple
 - **The `subtitle-proofreader` agent**, on Sonnet. It corrects one chunk from its contact sheets
   and writes only that chunk's `answers.json`. A chunk that fails is redone with fresh planted
   errors on Opus.
-- **A guard hook** that keeps the proofreader inside its own chunk folder, so it can't read
-  another chunk, the reports or the key.
+- **A guard hook** that limits the proofreader to chunk files (cues, contact sheets and answers),
+  so it can't read the OCR output, the reports or the key.
 
 The checks live in the command, not in the plugin, so a plugin run can't skip one.
 
@@ -253,8 +254,8 @@ title_01.s0 chunk 1: 3 of 3 controls failed; redo it one model up (review-prep -
 
 ## 🧰 Commands
 
-Every command takes `--help`. Exit status: **0** done, **1** an error or a failed check, **3**
-refused because the disc is scrambled.
+Every command takes `--help`. Exit status: **0** done, **1** an error or a failed check, **2** a
+wrong command line, **3** refused because the disc is scrambled.
 
 | Command | What it does |
 |---|---|
@@ -284,6 +285,8 @@ folder per disc.
 - **Films only.** `name` places a film with its extras; TV-series discs aren't supported yet.
 - **Titles with several angles or interleaved cells** (seamless branching) are skipped, also
   when you ask for them by number.
+- **A subtitle that can't be decoded is left out.** `ocr` says how many it skipped, and their
+  lines are missing from the SRT.
 - **Subtitles from the disc only.** Speech to subtitles and translation aren't in yet.
 - **No Blu-ray.**
 
@@ -296,7 +299,8 @@ Issues and pull requests are welcome at
 read the [contributing guide](https://github.com/agusgonzaleznic/.github/blob/main/CONTRIBUTING.md)
 first. When you report a bug, say whether it also happens on the sample disc.
 
-Run the tests from a clone, with ffmpeg and dvdauthor installed:
+Run the tests from a clone. They need ffmpeg, and `dvdauthor` and `spumux` on your PATH for the
+sample disc:
 
 ```bash
 python3 -m venv .venv
@@ -331,8 +335,8 @@ flowchart TD
 ```
 
 A pull request that changes what ships raises `__version__` in `dvdtoplex/__init__.py`, and its
-check `Release / Check the version` fails until it does. Tests, the plugin, docs and workflows ship
-with the next version. The release publishes the wheel, the source archive and their `SHA256SUMS`
+check `Release / Check the version` fails until it does. Tests, docs and workflows ship with the
+next version. The plugin is installed from main, so it changes with every merge. The release publishes the wheel, the source archive and their `SHA256SUMS`
 on GitHub, then uploads the same files to PyPI with Trusted Publishing, so the workflow uses no
 PyPI token.
 
