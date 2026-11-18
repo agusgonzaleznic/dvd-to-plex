@@ -146,7 +146,7 @@ class Reading(unittest.TestCase):
             self.assertEqual(ocr.read(binary, "de", scale, correction, [image]), [""])
 
     def test_a_language_vision_lacks_is_refused(self):
-        code, _, err = cli("ocr", self.work, "--files", "title_02", "--lang", "xx")
+        code, _, err = cli("ocr", self.work, "--files", "title_02.mkv", "--lang", "xx")   # .mkv accepted
         self.assertEqual(code, 1)
         self.assertIn("Vision reads no language for xx", err)
 
