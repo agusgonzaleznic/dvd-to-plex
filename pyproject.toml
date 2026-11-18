@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dvd-to-plex"
+dynamic = ["version"]
+description = "Remuxes unscrambled DVD-Video to MKV losslessly, with Plex names and verified subtitles."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "Agustin Gonzalez Nicolini" }]
+keywords = ["dvd", "mkv", "remux", "plex", "subtitles"]
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video :: Conversion",
+]
+
+[project.scripts]
+dvd-to-plex = "dvdtoplex.cli:main"
+
+[project.urls]
+Source = "https://github.com/agusgonzaleznic/dvd-to-plex"
+Issues = "https://github.com/agusgonzaleznic/dvd-to-plex/issues"
+
+[tool.hatch.version]
+path = "dvdtoplex/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dvdtoplex"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["dvdtoplex", "tests", "README.md", "LICENSE"]

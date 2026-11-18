@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# Work folders and media: discs, copies and outputs never belong in the repository.
+work/
+VIDEO_TS/
+*.iso
+*.vob
+*.VOB
+*.IFO
+*.BUP
+*.mkv
+*.wav
+*.aiff
+
+# macOS
+.DS_Store
