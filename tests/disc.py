@@ -4,6 +4,7 @@ import collections
 import contextlib
 import io
 import pathlib
+import shutil
 import subprocess
 import tempfile
 
@@ -12,6 +13,7 @@ from dvdtoplex.cli import main
 
 _built: tuple[pathlib.Path, dict] | None = None
 _remuxed: pathlib.Path | None = None
+_ocred: pathlib.Path | None = None
 
 
 def sample_disc() -> tuple[pathlib.Path, dict]:
@@ -43,6 +45,22 @@ def remuxed_work() -> pathlib.Path:
                 raise RuntimeError(f"{args[0]} failed on the sample:\n{out.getvalue()}")
         _remuxed = work
     return _remuxed
+
+
+def ocr_work() -> pathlib.Path:
+    """A work folder holding the remuxed sample's out/ and its ocr/, built once per run."""
+    global _ocred
+    if _ocred is None:
+        tmp = tempfile.TemporaryDirectory(prefix="dvdtoplex-ocr-")
+        atexit.register(tmp.cleanup)
+        work = pathlib.Path(tmp.name) / "work"
+        shutil.copytree(remuxed_work() / "out", work / "out")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            if main(["ocr", str(work)]) != 0:
+                raise RuntimeError(f"ocr failed on the sample:\n{out.getvalue()}")
+        _ocred = work
+    return _ocred
 
 
 def rendered_colours(ifo_file: pathlib.Path, vob: pathlib.Path, seconds: float) -> collections.Counter:
