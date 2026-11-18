@@ -1,0 +1,9 @@
+{
+  "name": "dvd-to-plex",
+  "description": "Drives the dvd-to-plex command: unscrambled DVD-Video to lossless MKV under Plex names, with disc subtitles proofread against their images by an agent whose work is checked with planted errors.",
+  "author": { "name": "Agustin Gonzalez Nicolini" },
+  "homepage": "https://github.com/agusgonzaleznic/dvd-to-plex",
+  "repository": "https://github.com/agusgonzaleznic/dvd-to-plex",
+  "license": "MIT",
+  "keywords": ["dvd", "mkv", "plex", "subtitles", "ocr"]
+}

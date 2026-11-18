@@ -291,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--names", type=pathlib.Path, help="names file (default WORK/names.json)")
     p.add_argument("--dry-run", action="store_true", help="check and print the names without moving anything")
     p.set_defaults(run=_name)
-    p = commands.add_parser("verify", help="check the named files against their remux reports and plex-renamer",
+    p = commands.add_parser("verify", help="check the named files against their remux or embed reports and plex-renamer",
                             description="Re-hashes every file WORK/name.json lists at its place in the library "
                                         "and reads the title folder back through plex-renamer; writes "
                                         "WORK/verify.json. Exit status: 0 all as checked, 1 a problem.")

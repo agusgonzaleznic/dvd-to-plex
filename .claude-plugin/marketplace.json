@@ -1,0 +1,12 @@
+{
+  "name": "dvd-to-plex",
+  "description": "The dvd-to-plex plugin for Claude Code.",
+  "owner": { "name": "Agustin Gonzalez Nicolini" },
+  "plugins": [
+    {
+      "name": "dvd-to-plex",
+      "source": "./plugin",
+      "description": "Unscrambled DVD-Video to lossless MKV under Plex names, with proofread subtitles."
+    }
+  ]
+}
