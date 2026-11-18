@@ -155,7 +155,9 @@ class Assemble(Base):
         self.assertFalse((self.work / "subs" / "title_01.s0.de.srt").exists())
         self.assertTrue((self.work / "subs" / "title_02.s0.de.srt").exists())
         words = {w.strip(".,!?") for c in self.cues("title_01.s0") for w in c["draft"].split()}
-        self.assertFalse([w for w in words if len(w) > 2 and w in out + err], "no cue text in the report")
+        said = set(re.findall(r"\w+", out + err))         # whole words: "der" is in /var/folders
+        self.assertFalse([w for w in words if len(w) > 2 and w in said], "no cue text in the report")
+        self.assertIn("title_01", said, "control: the report's own words are found")
 
     def test_a_silent_cut_and_an_unsure_keep_both_fail(self):
         planted = self.planted("title_01.s0")
