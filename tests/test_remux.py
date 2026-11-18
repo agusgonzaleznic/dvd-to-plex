@@ -3,6 +3,7 @@ control built to break it."""
 import collections
 import contextlib
 import dataclasses
+import hashlib
 import io
 import json
 import pathlib
@@ -58,6 +59,8 @@ class Output(Base):
             report, work, out = self.run_title(t["title"])
             self.assertTrue(report["ok"], report)
             self.assertTrue(out.is_file())
+            self.assertEqual((report["bytes"], report["sha256"]),
+                             (out.stat().st_size, hashlib.sha256(out.read_bytes()).hexdigest()))
             self.assertFalse((work / "cut.vob").exists() or (work / "stage1.mkv").exists())
             got = media.streams(out)
             audio = [s for s in got if s["codec_type"] == "audio"]

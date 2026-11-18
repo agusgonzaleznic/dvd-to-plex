@@ -20,7 +20,16 @@ class CopyError(RuntimeError):
     """The copy stopped: a read error, a short read, or a work folder already in use."""
 
 
-def _copy_file(src: pathlib.Path, dst: pathlib.Path) -> dict:
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fin:
+        for block in iter(lambda: fin.read(CHUNK), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def copy_file(src: pathlib.Path, dst: pathlib.Path) -> dict:
+    """Copy SRC to DST through DST.part, stopping on a read error; returns its name, size and SHA-256."""
     size = src.stat().st_size
     digest, done = hashlib.sha256(), 0
     tmp = dst.with_name(dst.name + ".part")
@@ -67,7 +76,7 @@ def copy(video_ts: pathlib.Path, work: pathlib.Path) -> dict:
     dest.mkdir()
     manifest = {"source": str(video_ts), "files": []}
     for src in files:
-        manifest["files"].append(_copy_file(src, dest / src.name.upper()))
+        manifest["files"].append(copy_file(src, dest / src.name.upper()))
     (work / "copy.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
@@ -81,10 +90,6 @@ def verify(work: pathlib.Path) -> list[str]:
         if not p.is_file():
             problems.append(f"{f['name']}: missing")
             continue
-        digest = hashlib.sha256()
-        with open(p, "rb") as fin:
-            for block in iter(lambda: fin.read(CHUNK), b""):
-                digest.update(block)
-        if digest.hexdigest() != f["sha256"] or p.stat().st_size != f["bytes"]:
+        if p.stat().st_size != f["bytes"] or sha256_file(p) != f["sha256"]:
             problems.append(f"{f['name']}: changed since the copy")
     return problems

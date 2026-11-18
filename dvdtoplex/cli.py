@@ -4,7 +4,8 @@ import json
 import pathlib
 import sys
 
-from dvdtoplex import __version__, copier, ifo, parts, remux, sample, scramble, source, survey
+from dvdtoplex import (__version__, copier, ifo, namer, parts, remux, sample, scramble, source,
+                       survey, verifier)
 
 # Exit codes: 0 done, 1 an error, 3 refused because the disc is scrambled.
 REFUSED = 3
@@ -100,6 +101,45 @@ def _remux(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _name(args: argparse.Namespace) -> int:
+    try:
+        record = namer.place(args.work, args.library, args.names or args.work / "names.json",
+                             dry_run=args.dry_run)
+    except (namer.PlaceError, copier.CopyError, OSError, ValueError) as e:
+        print(f"dvd-to-plex: {e}", file=sys.stderr)
+        return 1
+    for f in record["files"]:
+        print(f"{f['stem']} -> {pathlib.Path(record['library']) / f['dst']}")
+    print("Dry run: nothing moved." if args.dry_run else f"Moves recorded in {args.work / 'name.json'}")
+    return 0
+
+
+def _verify(args: argparse.Namespace) -> int:
+    try:
+        result = verifier.verify(args.work)
+    except (verifier.VerifyError, OSError, ValueError) as e:
+        print(f"dvd-to-plex: {e}", file=sys.stderr)
+        return 1
+    for problem in result["problems"]:
+        print(problem, file=sys.stderr)
+    print(f"{result['folder']}: " + ("ok, every file as remux checked it" if result["ok"] else
+                                     f"{len(result['problems'])} problems; see {args.work / 'verify.json'}"))
+    return 0 if result["ok"] else 1
+
+
+NAMES_HELP = """The names file (default WORK/names.json) is JSON:
+  {"category": "Movies", "title": "Example Film", "year": 2024, "imdb": "tt0000000",
+   "edition": "Special Edition",
+   "files": {"title_01": {"role": "movie"},
+             "title_02": {"role": "extra", "folder": "Featurettes", "label": "Making Of"},
+             "title_03": {"role": "skip"}}}
+year, imdb (or tmdb) and edition are optional. Every file in WORK/out needs a role. Parts of one
+title (title_01_part1, title_01_part2) can all be the movie. Extras folders:
+  """ + ", ".join(namer.FOLDERS) + """.
+Nothing moves until the names read back through plex-renamer and every file matches its remux
+report; WORK/name.json records each move. Exit status: 0 named, 1 an error or a failed check."""
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="dvd-to-plex",
@@ -133,6 +173,19 @@ def main(argv: list[str] | None = None) -> int:
                    help="without --titles, skip titles shorter than this (default 5)")
     p.add_argument("--prefer-audio", metavar="LANG", help="two-letter language to make the default audio")
     p.set_defaults(run=_remux)
+    p = commands.add_parser("name", help="move WORK/out's files into a Plex library under plex-renamer's names",
+                            description=NAMES_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("work", type=pathlib.Path, help="work folder holding out/ and remux/ (as written by remux)")
+    p.add_argument("library", type=pathlib.Path, help="library root; files go to LIBRARY/CATEGORY/<title folder>")
+    p.add_argument("--names", type=pathlib.Path, help="names file (default WORK/names.json)")
+    p.add_argument("--dry-run", action="store_true", help="check and print the names without moving anything")
+    p.set_defaults(run=_name)
+    p = commands.add_parser("verify", help="check the named files against their remux reports and plex-renamer",
+                            description="Re-hashes every file WORK/name.json lists at its place in the library "
+                                        "and reads the title folder back through plex-renamer; writes "
+                                        "WORK/verify.json. Exit status: 0 all as checked, 1 a problem.")
+    p.add_argument("work", type=pathlib.Path, help="work folder holding name.json (as written by name)")
+    p.set_defaults(run=_verify)
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
