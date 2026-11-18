@@ -1,0 +1,30 @@
+# Tests on every pull request and every push to main, on macOS, where the tool runs. The tests need
+# ffmpeg and dvdauthor from Homebrew, and swift and say from the runner image.
+#
+# There is no release job yet: nothing is published while the repository is private.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tests:
+    name: Tests
+    uses: agusgonzaleznic/github-reusable-workflows/.github/workflows/python-tests.yml@cd03d5ff330fb81c7889a81263627a2379e704d4 # pending: github-reusable-workflows#21, re-pin to its release
+    with:
+      runs-on: macos-15
+      python-versions: '["3.12", "3.13"]'
+      install-requirements: false
+      brew-packages: ffmpeg dvdauthor
+      timeout-minutes: 30
+      test-command: .venv/bin/python -m unittest discover -s tests -v
