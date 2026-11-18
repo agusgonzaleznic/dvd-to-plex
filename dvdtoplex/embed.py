@@ -25,7 +25,6 @@ import re
 
 from dvdtoplex import copier, lang, media, namer
 
-SRT_NAME = re.compile(r"^(?P<file>.+)\.s(?P<stream>\d+)\.(?P<lang>[a-z]{2})\.srt$")
 TIMING = re.compile(r"^\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}$")
 COPY = ("-c", "copy", "-map_metadata", "0", "-map_chapters", "0")
 
@@ -49,16 +48,13 @@ def cues(text: str, where: str) -> list[tuple[str, str]]:
 
 def subtitles(work: pathlib.Path, stem: str) -> list[dict]:
     found = []
-    for p in sorted((work / "subs").glob(f"{stem}.s*.srt")):
-        m = SRT_NAME.match(p.name)
-        if not m or m["file"] != stem:
-            continue
-        if (code := lang.matroska(m["lang"])) == "und":
-            raise EmbedError(f"{p.name}: {m['lang']!r} is not a language code this tool knows")
+    for p, _, two in namer.srts(work, stem):
+        if (code := lang.matroska(two)) == "und":
+            raise EmbedError(f"{p.name}: {two!r} is not a language code this tool knows")
         text = p.read_text(encoding="utf-8")
         if not text.strip():
             raise EmbedError(f"{p.name}: no cues")
-        found.append({"srt": p, "language": m["lang"], "matroska": code, "cues": cues(text, p.name)})
+        found.append({"srt": p, "language": two, "matroska": code, "cues": cues(text, p.name)})
     return found
 
 
@@ -171,7 +167,7 @@ def embed(work: pathlib.Path, files: list[str] | None = None, *,
             raise EmbedError(f"{', '.join(unknown)} not in {work / 'out'}")
         chosen = files
     else:
-        chosen = [s for s in stems if any((work / "subs").glob(f"{s}.s*.srt"))]
+        chosen = [s for s in stems if namer.srts(work, s)]
         if not chosen:
             raise EmbedError(f"nothing to embed: no SRT in {work / 'subs'} for a file in {work / 'out'}")
     retired = work / f"retired-{(today or datetime.date.today()).isoformat()}"

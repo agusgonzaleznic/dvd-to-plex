@@ -210,8 +210,10 @@ NAMES_HELP = """The names file (default WORK/names.json) is JSON:
 year, imdb (or tmdb) and edition are optional. Every file in WORK/out needs a role. Parts of one
 title (title_01_part1, title_01_part2) can all be the movie. Extras folders:
   """ + ", ".join(namer.FOLDERS) + """.
-Nothing moves until the names read back through plex-renamer and every file matches its remux
-report; WORK/name.json records each move. Exit status: 0 named, 1 an error or a failed check."""
+The film's SRTs in WORK/subs go beside it as <film>.<lang>.srt (.forced when the disc track was);
+an extra's must be embedded first (embed), because Plex ignores sidecars next to a local extra.
+Nothing moves until the names read back through plex-renamer and every file matches its remux (or
+embed) report; WORK/name.json records each move. Exit status: 0 named, 1 an error or a failed check."""
 
 
 def main(argv: list[str] | None = None) -> int:
