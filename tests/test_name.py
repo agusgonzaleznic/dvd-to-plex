@@ -162,7 +162,7 @@ class Name(Base):
         flip(self.work / "out" / "title_03.mkv")
         code, _, err = cli("name", self.work, self.lib)
         self.assertEqual(code, 1)
-        self.assertIn("title_03.mkv changed since remux checked it; nothing was moved", err)
+        self.assertIn("title_03.mkv changed since it was checked; nothing was moved", err)
         self.assertEqual(self.lib_files(), [])
         self.assertFalse((self.work / "name.json").exists())
 
@@ -209,7 +209,7 @@ class Verify(Base):
         flip(placed)
         code, _, err = cli("verify", self.work)
         self.assertEqual(code, 1)
-        self.assertIn(f"{PLACED['title_03']}: changed since remux checked it", err)
+        self.assertIn(f"{PLACED['title_03']}: changed since it was checked", err)
         flip(placed)
         self.assertEqual(cli("verify", self.work)[0], 0, "the same file flipped back passes")
 

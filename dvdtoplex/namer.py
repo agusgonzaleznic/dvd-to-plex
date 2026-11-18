@@ -2,7 +2,8 @@
 
 A names file says what each file in WORK/out is: the film (or one part of it), an extra with its
 Plex extras folder and label, or skip. Every file in WORK/out must be listed, so none is left
-behind unnoticed. Before anything moves, each file is hashed against its remux report, and the
+behind unnoticed. Before anything moves, each file is hashed against its remux report (or its
+embed report, once embed added text tracks), and the
 planned names are laid out as sparse files and run through plex-renamer's own scan, classify and
 plan: it must read back the same title, year, id and edition and want to rename nothing.
 WORK/name.json records every move before it happens and marks each one once it is done.
@@ -64,8 +65,31 @@ def _category(names: dict) -> str:
     return category
 
 
+def _json(path: pathlib.Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def checked(work: pathlib.Path, stem: str) -> dict | None:
+    """The report holding the size and SHA-256 WORK/out/<stem>.mkv was last checked at: its embed
+    report once embed replaced the file, if that embed started from the file its remux report
+    checked; otherwise the remux report. None when neither passes."""
+    remux = _json(work / "remux" / stem / "report.json")
+    if not remux.get("ok") or not remux.get("sha256") or "bytes" not in remux:
+        return None
+    embedded = _json(work / "embed" / stem / "report.json")
+    if not embedded.get("ok"):
+        return remux                          # never embedded, or its checks failed and nothing moved
+    if not embedded.get("replaced") or embedded.get("original", {}).get("sha256") != remux["sha256"]:
+        return None
+    return embedded
+
+
 def plan(work: pathlib.Path, library: pathlib.Path, names: dict) -> dict:
-    """The record of what goes where, checked against the remux reports and plex-renamer."""
+    """The record of what goes where, checked against the remux (or embed) reports and plex-renamer."""
     if not isinstance(names, dict) or not isinstance(names.get("files"), dict):
         raise PlaceError("names: expected an object with a 'files' object")
     info, category = title_info(names), _category(names)
@@ -109,10 +133,10 @@ def plan(work: pathlib.Path, library: pathlib.Path, names: dict) -> dict:
         if rel.lower() in taken:
             raise PlaceError(f"names: two files would be named {rel}")
         taken.add(rel.lower())
-        report_path = work / "remux" / stem / "report.json"
-        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else {}
-        if not report.get("ok") or not report.get("sha256") or "bytes" not in report:
-            raise PlaceError(f"{stem}: no passing remux report with a SHA-256 at {report_path}")
+        report = checked(work, stem)
+        if report is None:
+            raise PlaceError(f"{stem}: no passing remux report with a SHA-256 at "
+                             f"{work / 'remux' / stem / 'report.json'}, or its embed report does not follow it")
         if (library / rel).exists():
             raise PlaceError(f"{library / rel} already exists; nothing was moved")
         files.append({"stem": stem, "role": roles[stem], "dst": rel, "bytes": report["bytes"],
@@ -191,7 +215,7 @@ def place(work: pathlib.Path, library: pathlib.Path, names_file: pathlib.Path, *
                          "way; it lists every move")
     for f in record["files"]:
         if copier.sha256_file(work / "out" / f"{f['stem']}.mkv") != f["sha256"]:
-            raise PlaceError(f"{f['stem']}.mkv changed since remux checked it; nothing was moved")
+            raise PlaceError(f"{f['stem']}.mkv changed since it was checked; nothing was moved")
 
     def save() -> None:
         log.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
