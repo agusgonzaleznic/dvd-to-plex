@@ -12,7 +12,10 @@ folder. Nothing ran against a real disc or real user files. Nothing in the repos
 against the Claude Code hooks reference. The output of every reproduction, and the scripts of most,
 are kept outside the repository.
 
-**Status.** Every finding below is **open**. The maintainer decides what to fix and when.
+**Status.** Findings 1 and 2 were fixed on 19 November 2026, after the 0.1.0 release, in the plugin,
+which installs from `main`, so no package release was needed. The rest are **open**. The maintainer
+decides what to fix and when. Each finding describes the code at the audited commit; findings 1
+and 2 end with a note on their fix.
 
 ## Threat model
 
@@ -35,8 +38,8 @@ Severity is judged for a single-user local tool: what an attacker gains, and wha
 
 | # | Finding | Severity | Status | Reproduced |
 |---|---|---|---|---|
-| 1 | The guard allows any chunk-shaped path, not only the agent's own chunk | Low | open | yes (R5) |
-| 2 | The guard fails open when it cannot run or crashes | Medium | open | yes (R5, R6) |
+| 1 | The guard allows any chunk-shaped path, not only the agent's own chunk | Low | fixed | yes (R5) |
+| 2 | The guard fails open when it cannot run or crashes | Medium | fixed | yes (R5, R6) |
 | 3 | A cached OCR helper in the work folder runs without any check | Low | open | yes (R4) |
 | 4 | Symlinks in the disc folder are followed; copy brings their targets in | Low | open | yes (R2) |
 | 5 | Some malformed disc tables crash with a traceback instead of a clean refusal | Low | open | yes (R1) |
@@ -64,6 +67,16 @@ answers and to write a JSON file into folders of that shape anywhere it can writ
 to write only its own chunk's `answers.json`; the guard does not enforce that. Whether the Write
 tool creates missing parent folders was not tested.
 
+**Fixed on 19 November 2026.** The guard now binds each agent run to the chunk folder of its first
+allowed Read, and refuses every other chunk folder and a Write before any Read. It keys the binding
+on the session id and the `agent_id` Claude Code gives each agent run, so proofreaders running in
+parallel, and a redo, each get their own. It also refuses a symbolic link at the review, track or
+chunk folder, not only at the file, and any path with a `.` segment, a doubled or trailing slash,
+or a leading `//`. `tests/test_plugin.py` covers each case. Inside Claude Code 2.1.328, two
+proofreaders launched in parallel each read their own chunk and were refused the other's. Whether
+the bound folder exists, or is the one the prompt named, the guard leaves unchecked: the agent's
+first Read, decided before any file has reached it, picks it.
+
 ### 2. The guard fails open when it cannot run or crashes
 
 Claude Code blocks a `PreToolUse` call when the hook exits with status 2 or returns a deny decision.
@@ -83,6 +96,15 @@ subtitle images (finding 9). It could also pass its chunk without reading the im
 keeps every cue's text before planting (`dvdtoplex/ocr.py:91-98`), so comparing it with `cues.json`
 shows each plant, as `tests/test_review.py:52-59` does. The user's own permission settings then
 remain the only limit.
+
+**Fixed on 19 November 2026.** `guard.sh` now refuses the proofreader's call when the guard exits
+with anything but 0, or 2 with the guard's own message, a missing interpreter or script included,
+and lets every other call pass. The guard refuses the proofreader's call on any error of its own, a
+`tool_input` that is not an object included. `hooks.json` sets `"onFailure": "block"` and a
+30-second timeout for what the shim cannot cover, the shim itself not starting or timing out; Claude
+Code then blocks the call, whoever made it. Inside Claude Code 2.1.328, a hook that timed out
+blocked a Read, and the same hook without `onFailure` let it through. Claude Code older than 2.1.295
+was not tested.
 
 ### 3. A cached OCR helper in the work folder runs without any check
 
@@ -220,7 +242,8 @@ a reading of the design.
 - Symlinks inside an attached ISO image (finding 4), whether Claude Code's Write tool creates
   missing folders (finding 1), and whether a slow subtitle unit survives remux (finding 6).
 - The plugin was not run inside Claude Code for this audit. The guard was exercised directly, with
-  the input shape the Claude Code hooks reference describes.
+  the input shape the Claude Code hooks reference describes. The fixes for findings 1 and 2 were
+  checked inside Claude Code.
 
 ## Verification
 

@@ -20,8 +20,8 @@ and no failed output replaces a good one.
 - **The work folder.** One folder per disc, holding every result and a JSON record per stage. There
   is no database and no daemon: the files are the state.
 - **The plugin.** A skill that drives the command in order, an agent that proofreads subtitle
-  chunks, and a hook that limits that agent to chunk-shaped files (any chunk folder's cues, sheets
-  and answers). The plugin holds none of the stage checks, so a stage it runs cannot skip one; which
+  chunks, and a hook that holds that agent to its own chunk's files (its cues, sheets and
+  answers). The plugin holds none of the stage checks, so a stage it runs cannot skip one; which
   stages run is up to the skill's instructions.
 
 ## 2. The stages
@@ -387,41 +387,44 @@ an agent; never write an `answers.json` or proofread a chunk itself. A test chec
 every CLI command except `sample`, and none the CLI lacks.
 
 **The agent** (`plugin/agents/subtitle-proofreader.md`) has `tools: Read, Write`, model Sonnet and
-effort medium, and is told to work in one chunk folder.
+effort medium, and is told to work in one chunk folder and to read its `cues.json` first.
 
 **The hook.** `plugin/hooks/hooks.json` registers a `PreToolUse` hook for every tool (`matcher:
-"*"`) that runs `guard.sh` through `/bin/sh`; Claude Code passes the call as JSON on stdin.
-`guard.sh` is a shim: if `/usr/bin/xcode-select -p` succeeds it runs `/usr/bin/python3 -I
-proofreader_guard.py`. If not, `/usr/bin/python3` is a stub that asks to install the tools on every
-tool call, so without them a call whose `agent_type` is the proofreader is refused (exit 2) and
-every other call passes. The pattern ignores an escaped copy inside a string value; any unescaped
-key of that name on stdin matches, which errs on the side of refusing.
+"*"`) that runs `guard.sh` through `/bin/sh`, with a 30-second timeout and `"onFailure": "block"`.
+`guard.sh` runs `/usr/bin/python3 -I proofreader_guard.py` only if `/usr/bin/xcode-select -p`
+succeeds (without the tools that Python is an install prompt), passing on exit 0, and exit 2 with
+the guard's own message (python3 also exits 2 when it cannot open the script). Otherwise it refuses
+a call whose `agent_type` is the proofreader (any unescaped copy of that key matches) and lets the
+rest pass. A shim that cannot start or times out blocks any caller's call, through `onFailure`.
 
 `proofreader_guard.py` applies only to the agent `dvd-to-plex:subtitle-proofreader`, and runs on the
-system Python 3.9, so it uses nothing newer. For that agent it refuses with exit 2:
+system Python 3.9, so it uses nothing newer; every other agent and the main session pass. For that
+agent it refuses with exit 2:
 
-- any tool except `Read` and `Write`;
-- a path that is not absolute, is not normalised (a `..`, a `.` segment or a doubled slash after the
-  first character; a leading `//` passes, and still has to match the chunk shape) or whose last part
-  is a symbolic link (a link earlier in the path is followed);
+- any tool except `Read` and `Write`, and a call that names no session;
+- a path that is not absolute, or has a `.` or `..` segment or a doubled or trailing slash;
 - a `Read` of anything but `cues.json`, `sheet_NN.png` or `answers.json` in a
   `/review/<track>/chunk_NN/` folder, or a `Write` of anything but `answers.json` there;
-- a call it cannot parse that mentions the agent.
+- a symbolic link at the review, track or chunk folder or the file (a link above them, such as a
+  library on another drive, is followed);
+- a chunk folder other than the agent run's binding, and a `Write` before any `Read`;
+- unparseable input that mentions the agent, and any error of its own.
 
-Every other agent, the main session and unparseable input that does not mention the agent pass. The
-guard checks the shape of the path, not which chunk it is, and does not know the chunk the prompt
-named. The key, the OCR output and the reports are out of the agent's reach while the hook runs,
-because none of them matches those paths. If the hook cannot run or crashes (a parsed call whose
-`tool_input` is not an object raises, exit 1), the call is not refused: Claude Code blocks only on
-exit 2 or a deny decision, and `hooks.json` does not set `"onFailure": "block"`. The [security
-audit](security.md) lists both gaps as findings 1 and 2.
+**The binding.** An agent run's first allowed `Read` binds it to that chunk folder. The binding is a
+file named after a hash of the session id and the `agent_id` Claude Code gives each agent run, in a
+`dvd-to-plex-guard` folder under the user's temporary folder (mode 0700; refused if it is a link,
+not the user's or open to others). It is written as a draft and hard-linked into place, so of two
+first calls at once one binds. That `Read` is decided before any file has reached the agent, so no
+text from the disc can choose the chunk. The guard does not know the chunk the prompt named, does
+not check that it exists, and never removes a binding. The key, the OCR output and the reports match
+no chunk file. The [security audit](security.md) records the two gaps this closed, findings 1 and 2.
 
-**Controls.** `tests/test_plugin.py` checks the manifests agree; runs the guard on allowed calls and
-on refused ones (a key path, `..` paths, `review.json`, a relative path, `Bash`, `Edit`, broken
-JSON), also on the system Python when `/usr/bin/python3` exists; runs the shim, a test skipped
-without the Xcode command line tools; and runs a copy of it with the Xcode check forced to fail to
-show that only the proofreader is refused. No test feeds it a symbolic link, a `.` segment, a
-doubled slash or another chunk's path.
+**Controls.** `tests/test_plugin.py` checks the manifests and the hook's `onFailure` and timeout;
+feeds the guard, also on the system Python when present, every refused case above beside allowed
+calls; checks that a second run, a redo and a second session bind their own, that two first calls
+at once bind one chunk, and that a binding folder that is not private is refused; and runs copies
+of the shim with no Xcode tools, a guard that exits 3, a script that is not Python and a missing
+interpreter, each refusing only the proofreader. The shim test with the tools skips without them.
 
 ## 9. The synthetic sample disc
 
@@ -493,5 +496,4 @@ comment, a docstring or the README:
   command's full scrambling scan before any title (the tests call the stage function, which scans
   only the cut); `inspect`'s "no cells" and "VOB files missing"; `ocr`'s packet sizes that do not
   add up and a track with no known language; `embed`'s "chapters changed", "file tags changed" and
-  stream count; `assemble`'s key for another attempt; and the guard's symbolic link, `.` segment,
-  doubled slash and other-chunk cases.
+  stream count; and `assemble`'s key for another attempt.

@@ -8,8 +8,9 @@
 > of it. Where this page and the code disagree, the code is the truth; please open an issue.
 >
 > **Open after 0.1.0:** five findings of the second review, listed under
-> [What is still open](#what-is-still-open). The [security audit](security.md) of the same day
-> covers the plugin guard in more depth.
+> [What is still open](#what-is-still-open). The first, on the plugin guard, was fixed on
+> 19 November 2026. The [security audit](security.md) of the same day covers the guard in more
+> depth.
 
 ## Review 1: the design, before building
 
@@ -73,7 +74,7 @@ to the rule on scrambled discs. Three findings blocked the release; the rest did
 | Finding | What was done |
 |---|---|
 | **Blocking.** The release needs its settings in order before the merge: the repository public, a `pypi` environment limited to `v*` tags, a ruleset on `main`, the PyPI publisher confirmed, private vulnerability reports on. | Done in that order before the release merge. |
-| **Blocking.** The README and the agent's instructions said the guard keeps the proofreader inside its own chunk. The guard accepts any chunk folder. | The wording now says what the guard does. The code is unchanged: open, see below. |
+| **Blocking.** The README and the agent's instructions said the guard keeps the proofreader inside its own chunk. The guard accepts any chunk folder. | The wording was corrected for the release. The guard was fixed after it, see below. |
 | **Blocking.** The README asked users to install a Homebrew package that only the sample disc and the tests need, and whose dependencies include a library this project does not use. | The install table no longer lists it. CI keeps installing it to build the sample disc. |
 | A source file's docstring named another project the design avoids. | Reworded. |
 | The README's description of the scrambling check said more than the check does. | Reworded. |
@@ -84,15 +85,16 @@ to the rule on scrambled discs. Three findings blocked the release; the rest did
 | The `inspect` example lacked its first line, and exit status 2 was not listed. | Both fixed. |
 | The source archive shipped the plugin tests but not the plugin, so its own tests could not pass. | The archive now includes `plugin/` and `.claude-plugin/`; an old archive fails and the new one passes. |
 | Two checks have no failing control, and two inputs are tested against the check function rather than the stage. | Open, see below. |
-| `copy`'s re-check, the guard, and the anchor check. | Open, see below. |
+| `copy`'s re-check, the guard, and the anchor check. | Open, see below; the guard was fixed after the release. |
 
 ## What is still open
 
 These were found and not fixed before 0.1.0. They are listed here so nobody mistakes them for done.
 
-1. **The guard fails open, and accepts any chunk.** If the hook cannot start or crashes, Claude Code
-   lets the call go ahead, and the guard matches any `review/<name>/chunk_NN/` path, not the one
-   chunk the agent was given. There is no test that another chunk is refused. Findings 1 and 2 of
+1. **Fixed on 19 November 2026: the guard failed open, and accepted any chunk.** If the hook could
+   not start or crashed, Claude Code let the call go ahead, and the guard matched any
+   `review/<name>/chunk_NN/` path. It now blocks when it cannot run, holds each agent run to the
+   chunk folder it first read from, and has tests that refuse another chunk. Findings 1 and 2 of
    the [security audit](security.md).
 2. **The guard runs on every tool call.** Its matcher is `*`, so every session with the plugin
    enabled starts a shell and the system Python for each tool call, to let through every call that
@@ -102,8 +104,9 @@ These were found and not fixed before 0.1.0. They are listed here so nobody mist
 4. **The audio anchor check is enforced only when the title has subtitles** (`dvdtoplex/remux.py`).
 5. **Several checks have no failing control.** The review named two: the duration check and the
    audio and video offset check pass on the sample disc, but no test feeds them an input they must
-   reject. A claim-by-claim check of the architecture page against the code found fifteen more;
-   [architecture.md](architecture.md#12-not-in-this-version) lists all seventeen.
+   reject. A claim-by-claim check of the architecture page against the code found fifteen more.
+   The four of those on the guard have tests since 19 November 2026;
+   [architecture.md](architecture.md#12-not-in-this-version) lists the thirteen left.
 
 Suggested by the second review and not done: a prebuilt sample disc attached to each release, so
 that trying the tool needs no authoring tools.

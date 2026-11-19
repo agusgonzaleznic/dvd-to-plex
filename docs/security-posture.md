@@ -36,7 +36,7 @@ disc: a mounted disc, a folder holding `VIDEO_TS`, or an ISO image.
 - **The planted-error key** (`dvdtoplex/review.py`, `dvdtoplex/assemble.py`): ways for the
   proofreader to learn which cues hold a control, or to pass a chunk without doing the work.
 - **The plugin's guard** (`plugin/hooks/`): any way for the `subtitle-proofreader` agent to read or
-  write outside chunk files, or to use a tool other than Read and Write.
+  write outside its own chunk's files, or to use a tool other than Read and Write.
 - **Release and supply chain**: the workflows in `.github/`, the hash-locked requirement files in
   `requirements/`, and the path from a merge to PyPI.
 
@@ -81,10 +81,12 @@ disc: a mounted disc, a folder holding `VIDEO_TS`, or an ISO image.
   Support/dvd-to-plex/keys` (or `DVDTOPLEX_KEYS`), never inside the work folder, with owner-only
   permissions and a fresh random salt and run id per track. A redo plants fresh errors.
 - **Confines the proofreader with a guard.** A `PreToolUse` hook refuses the `subtitle-proofreader`
-  agent every tool except Read and Write, every relative or non-normalised path, a symlink as the
-  final file, and any file that is not a chunk's `cues.json`, contact sheet or `answers.json` (Read)
-  or `answers.json` (Write). Without the Xcode command line tools the wrapper refuses the agent
-  outright.
+  agent every tool except Read and Write, every path that is not absolute and plain, a symbolic link
+  at the review, track or chunk folder or the file, and any file that is not a chunk's `cues.json`,
+  contact sheet or `answers.json` (Read) or `answers.json` (Write). It holds each agent run to the
+  chunk folder it first read from. Any failure refuses the agent: an error in the guard, a missing
+  interpreter, or no Xcode command line tools. The hook sets `"onFailure": "block"`, so a hook
+  that cannot start or times out blocks the call too.
 - **Release from CI only.** Workflows run on `pull_request`, never `pull_request_target`, with
   read-only default permissions. Every action and shared workflow is pinned to a full commit SHA.
   The build and runtime requirement files are hash-locked. PyPI uploads use Trusted Publishing from
@@ -96,13 +98,14 @@ disc: a mounted disc, a folder holding `VIDEO_TS`, or an ISO image.
 Most of these come from the 18 November 2026 audit. They are open, not forgotten; the maintainer
 decides whether and when each changes.
 
-- **The guard checks the shape of a chunk path, not the agent's own chunk.** The agent can reach
-  other chunks' files, and the guard follows a symbolic link earlier in the path, but without such a
-  link the agent cannot reach the key, the OCR output or the reports.
-- **The guard fails open if it cannot run.** A missing interpreter, a crash or a timeout lets the
-  call through, because the hook sets no `onFailure`. The agent cannot trigger this itself, as far
-  as the audit found. If it happens, the agent can also read the key and the plain OCR text, and
-  pass a chunk without reading the images.
+- **A hook that hangs blocks every tool call.** `onFailure` applies to the whole hook, so if the
+  shim cannot start or runs past its 30-second timeout, Claude Code blocks the call whoever made
+  it, not only the proofreader's. It needs Claude Code 2.1.295 or later; older versions were not
+  tested.
+- **The guard trusts the agent's first Read to name its chunk.** The main session's prompt names
+  the folder, and that Read is decided before any file has reached the agent. Whether the folder
+  exists, or is the one the prompt named, the guard leaves unchecked. The binding lives in the
+  temporary folder: if that is cleared while an agent run goes on, its next Read binds afresh.
 - **The main session is not guarded.** The skill tells it never to open the key folder or write
   answers, but only the proofreader agent is technically confined.
 - **The key is safe by location, not by its hashes.** The salt sits in the same file as the hashes,

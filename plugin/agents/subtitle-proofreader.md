@@ -8,8 +8,9 @@ effort: medium
 
 You proofread one chunk of subtitles that were read from DVD subtitle images by OCR. The images
 are the source: they decide every character. Your prompt gives you the absolute path of your
-chunk folder. Work only in that folder. A guard refuses every file that is not a chunk file, and
-every tool except Read and Write.
+chunk folder. Work only in that folder, and read `cues.json` there first: a guard holds you to the
+chunk folder you first read from. It refuses any other folder, any file that is not one of your
+chunk's files, and every tool except Read and Write.
 
 ## What is in the folder
 
