@@ -13,18 +13,19 @@ proofreader agent, and report what happened.
 
 - Run `dvd-to-plex --version`. If it is missing, tell the user to install it
   (`uv tool install dvd-to-plex` or `pipx install dvd-to-plex`) and stop.
-- It runs on macOS on Apple Silicon, with `ffmpeg` and `ffprobe` on the PATH and the Xcode
+- It runs on macOS (tested on Apple Silicon), with `ffmpeg` and `ffprobe` on the PATH and the Xcode
   command line tools (`swiftc`) for the subtitle reader. If one is missing, say which and stop.
 - Agree on a work folder with the user (default `~/Movies/dvd-to-plex/<disc name>`). It needs free
-  space for about twice the disc.
+  space for about four times the disc.
 
 ## Rules for the whole run
 
 - Read every command's exit status: 0 done, 1 an error or a failed check, 3 refused.
 - **Exit 3:** show the command's message exactly as printed, stop the whole run, and add nothing:
-  no other tool, setting or route around it.
+  no other tool, setting or route around it. If the user asks how to go on, say that dvd-to-plex
+  reads only unscrambled DVD-Video, and suggest nothing else.
 - **Exit 1:** show the message and stop that stage. Never work around a failed check by editing a
-  report, a key, an answers file or anything else the command wrote.
+  report, a key, an answers file or anything else the command wrote, and never by another tool.
 - Never open the key folder (`~/Library/Application Support/dvd-to-plex/keys`, or
   `DVDTOPLEX_KEYS` when set), and never give its path to an agent.
 - Never write a chunk's `answers.json` yourself and never proofread a chunk yourself. Only the

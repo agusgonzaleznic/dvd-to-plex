@@ -1,8 +1,7 @@
 """Read the DVD-Video information files (IFO): titles, title sets, PGCs, cells and stream attributes.
 
 Plain file reads of VIDEO_TS.IFO and VTS_nn_0.IFO; nothing here touches the VOBs. Offsets follow
-the DVD-Video layout as documented by the dvdread project's ifo_types.h and the community
-references derived from it.
+the publicly documented DVD-Video IFO layout.
 """
 from __future__ import annotations
 

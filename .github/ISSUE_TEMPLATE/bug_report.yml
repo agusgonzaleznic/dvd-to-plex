@@ -1,0 +1,58 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **A disc that stops with "This disc's video is scrambled. dvd-to-plex reads only unscrambled
+        DVD-Video, so it stops here and changes nothing." is not a bug.** The tool stops there on
+        purpose and will keep doing so, so a report about it is closed.
+  - type: checkboxes
+    id: not-security
+    attributes:
+      label: Security
+      options:
+        - label: This is not a security vulnerability. I'll report those privately through the security policy.
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The commands you ran, in order. If you can, try the same on the synthetic disc that `dvd-to-plex sample` writes, and say whether it happens there too.
+      placeholder: |
+        1. dvd-to-plex inspect ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `dvd-to-plex --version`, or a commit SHA.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: The macOS version and Mac model, `ffmpeg -version` (first line), and the Claude Code version if you used the plugin.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output
+      description: What the command printed, and the report it names if it wrote one (for example WORK/remux/title_01.json). Remove anything private before you paste it.
+      render: shell

@@ -40,7 +40,7 @@ class Count:
 
 
 def count_file(path: pathlib.Path, *, most: int | None = None) -> Count:
-    """Check every pack of PATH, or at most MOST packs spread evenly across it."""
+    """Check every pack of PATH, or about MOST packs spread evenly (all of them below 2 * MOST)."""
     packs = path.stat().st_size // SECTOR
     step = 1 if most is None or packs <= most else packs // most
     out = Count()
