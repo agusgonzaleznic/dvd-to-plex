@@ -237,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("source", type=pathlib.Path, help="mounted disc, folder holding VIDEO_TS, or .iso image")
     p.add_argument("--json", action="store_true", help="print the survey as JSON")
     p.add_argument("--full-scan", action="store_true",
-                   help="check every pack for scrambling instead of up to 4096 per VOB file")
+                   help="check every pack for scrambling instead of about 4096 per VOB file")
     p.set_defaults(run=_inspect)
     p = commands.add_parser("copy", help="copy a disc's VIDEO_TS into a work folder, stopping on any read error",
                             description="Exit status: 0 copied, 1 error, 3 refused (scrambled video).")

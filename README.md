@@ -24,7 +24,7 @@ errors that prove it really looked.
 
 <br>
 
-**[What it does](#-what-it-does) · [What it checks](#-what-it-checks) · [What it won't do](#-what-it-wont-do) · [Install](#-install) · [First run](#-your-first-run) · [Claude Code](#-with-claude-code) · [Planted errors](#-how-the-planted-errors-work) · [Commands](#-commands) · [Limits](#-known-limitations) · [Contributing](#-contributing) · [Support](#-support-this-project)**
+**[What it does](#-what-it-does) · [What it checks](#-what-it-checks) · [What it won't do](#-what-it-wont-do) · [Install](#-install) · [First run](#-your-first-run) · [Claude Code](#-with-claude-code) · [Planted errors](#-how-the-planted-errors-work) · [Commands](#-commands) · [Limits](#-known-limitations) · [Docs](#-documentation) · [Contributing](#-contributing) · [Support](#-support-this-project)**
 
 </div>
 
@@ -88,12 +88,12 @@ library renamed with it and one filled with dvd-to-plex follow the same rules.
 
 Each stage refuses to hand on work it could not check. The tests feed the broken inputs in the
 last column to the stage or to its check and must see it fail, so a check that let everything
-through would turn CI red. The duration and audio offset checks have no such test yet.
+through would turn CI red. Some checks have no such test yet; the [architecture page](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/architecture.md#12-not-in-this-version) lists them.
 
 | Stage | What it checks | Broken inputs in its tests |
 |---|---|---|
-| `inspect` | Counts scrambled packs (up to 4096 per VOB file, or all with `--full-scan`); flags titles with several angles or interleaved cells | A cut IFO file, a scrambled pack |
-| `copy` | Reads with plain file reads only; stops at the first read error, never skips or pads; a SHA-256 per file | A read error, a scrambled pack |
+| `inspect` | Counts scrambled packs (about 4096 per VOB file, or all with `--full-scan`); flags titles with several angles or interleaved cells | A cut IFO file, a scrambled pack |
+| `copy` | Checks the same sample of packs for scrambling first; reads with plain file reads only; stops at the first read error, never skips or pads; a SHA-256 per file | A read error, a scrambled pack |
 | `remux` | The copy's SHA-256 again, when `copy` made it; every pack scanned for scrambling; video and audio packets hashed and compared with the disc; duration equal to the disc's tables; audio start offset kept; a full decode with no errors; each subtitle packet's bytes and time | A copy changed after `copy`, a stream one second short, corrupted video, a subtitle shifted in time |
 | `ocr` | Each subtitle read twice, as is and at twice the size without language correction, so later stages know where the readings agree | A blank image, and an accuracy floor on the sample |
 | `assemble` | Each chunk's planted errors: a chunk passes only if every one was put right | A planted error kept, a line cut |
@@ -101,8 +101,8 @@ through would turn CI red. The duration and audio offset checks have no such tes
 | `name` | The names read back through plex-renamer; each file matches its remux or embed report before it moves | A file changed after remux, a name plex-renamer reads differently |
 | `verify` | Every file in the library re-hashed against its report; plex-renamer wants to move nothing | One file altered, one missing |
 
-An MKV only appears in `WORK/out` once all its checks pass. When one fails, the stage stops with
-exit status 1 and leaves its work folder as it was, with a `report.json` that names the check.
+An MKV only appears in `WORK/out` once all its checks pass. When one fails, its work folder keeps
+everything, with a `report.json` that names the check, and `remux` exits 1 after the other titles.
 
 ---
 
@@ -222,12 +222,13 @@ Then ask in plain words, for example *"Add the DVD in /Volumes/MY_FILM to my Ple
 - **The `dvd-to-plex` skill.** It runs the stages in order, stops on any failed check without
   working around it, and stops for good on a scrambled disc.
 - **The `subtitle-proofreader` agent**, on Sonnet. It corrects one chunk from its contact sheets
-  and writes only that chunk's `answers.json`. A chunk that fails is redone with fresh planted
+  and writes that chunk's `answers.json`. A chunk that fails is redone with fresh planted
   errors on Opus.
 - **A guard hook** that limits the proofreader to chunk files (cues, contact sheets and answers),
-  so it can't read the OCR output, the reports or the key.
+  so it can't read the OCR output, the reports or the key. It has two known gaps, listed in the
+  [security audit](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/security.md).
 
-The checks live in the command, not in the plugin, so a plugin run can't skip one.
+The checks live in the command, not in the plugin, so a stage the plugin runs can't skip one.
 
 ---
 
@@ -255,7 +256,7 @@ title_01.s0 chunk 1: 3 of 3 controls failed; redo it one model up (review-prep -
 ## 🧰 Commands
 
 Every command takes `--help`. Exit status: **0** done, **1** an error or a failed check, **2** a
-wrong command line, **3** refused because the disc is scrambled.
+command line the argument parser rejects, **3** refused because the disc is scrambled.
 
 | Command | What it does |
 |---|---|
@@ -289,6 +290,22 @@ folder per disc.
   lines are missing from the SRT.
 - **Subtitles from the disc only.** Speech to subtitles and translation aren't in yet.
 - **No Blu-ray.**
+- **Open findings.** The [security audit](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/security.md) and the
+  [design review](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/design-review.md) list what was found and not yet fixed.
+
+---
+
+## 📚 Documentation
+
+| Page | What it holds |
+|---|---|
+| [Architecture](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/architecture.md) | How the stages, the work folder and the plugin fit together, and why |
+| [Development](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/development.md) | Setting up a clone, the tests, CI, how a release happens, the checklist before a pull request |
+| [Security posture](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/security-posture.md) | What is in and out of scope for a report, and what the tool already does |
+| [Security audit](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/security.md) | The audit of 18 November 2026: threat model, findings and their status |
+| [Design review](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/design-review.md) | The two independent reviews, what each found, and what is still open |
+| [Lessons learned](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/lessons-learned.md) | What building it taught |
+| [Asset provenance](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/assets-provenance.md) | Where the emblem and everything on the sample disc come from |
 
 ---
 
@@ -297,7 +314,8 @@ folder per disc.
 Issues and pull requests are welcome at
 [github.com/agusgonzaleznic/dvd-to-plex](https://github.com/agusgonzaleznic/dvd-to-plex). Please
 read the [contributing guide](https://github.com/agusgonzaleznic/.github/blob/main/CONTRIBUTING.md)
-first. When you report a bug, say whether it also happens on the sample disc.
+first, and [docs/development.md](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/development.md) for what is specific to this repository.
+When you report a bug, say whether it also happens on the sample disc.
 
 Run the tests from a clone. They need ffmpeg, and `dvdauthor` and `spumux` on your PATH for the
 sample disc:
@@ -308,8 +326,8 @@ python3 -m venv .venv
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-They build the sample disc and run every stage on it, and feed each check a bad input it has to
-reject. CI runs them on macOS, on Python 3.12 and 3.13, for every pull request and every push to
+They build the sample disc and run every stage on it, and feed most checks a bad input they have
+to reject. CI runs them on macOS, on Python 3.12 and 3.13, for every pull request and every push to
 main. From a clone, `python3 -m dvdtoplex` runs the code in place.
 
 ### 🔁 How a release happens
