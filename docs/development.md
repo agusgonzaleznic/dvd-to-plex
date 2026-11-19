@@ -60,7 +60,7 @@ Some tests need more than the sample disc:
   title.
 - `tests/test_plugin.py` checks that the plugin's manifests agree with each other, that the skill
   runs every command and no other, and that the proofreader guard lets the agent touch only its
-  chunk files. One guard test is skipped when the Xcode command line tools are not installed.
+  own chunk's files. One guard test is skipped when the Xcode command line tools are not installed.
 
 ### The synthetic sample disc
 
@@ -161,14 +161,20 @@ with the source `./plugin`:
 - `plugin/skills/dvd-to-plex/SKILL.md`: the skill that runs the stages in order.
 - `plugin/agents/subtitle-proofreader.md`: the proofreader agent, which has only the `Read` and
   `Write` tools.
-- `plugin/hooks/hooks.json`, `guard.sh` and `proofreader_guard.py`: the hook that limits the
-  proofreader to chunk files.
+- `plugin/hooks/hooks.json`, `guard.sh` and `proofreader_guard.py`: the hook that holds the
+  proofreader to its own chunk's files, and refuses its calls when the guard fails.
 
 `tests/test_plugin.py` keeps these in step with the command. It checks that the marketplace entry
 names the plugin and points at `./plugin`, that the plugin has no version of its own to drift from
 the package's, that the skill names every command the CLI has (except `sample`) and none that it has
 not, and that the guard allows and refuses the calls it should. The guard runs on the system
 `python3`, so it may use nothing newer than that version has.
+
+The guard's tests hand it calls as Claude Code would; they do not run Claude Code. The binding
+depends on the `agent_id` Claude Code puts in each call, so after a change to the hook, also run it
+there: install the plugin from your checkout into a fresh `CLAUDE_CONFIG_DIR`, and have the main
+session launch two proofreaders in parallel on two chunks, each reading its own chunk and then the
+other's. Each must be refused the other's chunk only.
 
 The checks live in the command, not in the plugin, so keep it that way: a stage the plugin runs must
 not be able to skip one.

@@ -1,7 +1,7 @@
 # Lessons learned
 
 A retrospective on building **dvd-to-plex**, from the hand-run process it came from to the 0.1.0
-release, written on 18 November 2026.
+release, written on 18 November 2026 and updated on 19 November, after the release.
 
 **What was built:** a Python command-line tool with nine stages and a `sample` command, a Claude
 Code plugin with a skill, a proofreading agent and a guard hook, a synthetic sample disc made from
@@ -32,8 +32,8 @@ Three times a check passed something wrong:
   because the check caught it. A control has to fail **at the check**.
 
 The habit had gaps. When this documentation was written, a check-by-check reading of the code found
-seventeen checks that no test had seen fail yet; the
-[architecture](architecture.md#12-not-in-this-version) lists them. A habit needs a list to be
+seventeen checks that no test had seen fail yet. The four on the guard have tests now, and the
+[architecture](architecture.md#12-not-in-this-version) lists the other thirteen. A habit needs a list to be
 checked against.
 
 A related fact: copying a disc without a read error says nothing about whether its video is
@@ -75,15 +75,18 @@ The same review found that the source archive could not pass its own tests, alth
 from the checkout: the archive carried the plugin's tests but not the plugin. Test the thing you
 ship, not the folder you build it from.
 
-## 5. A hook is the only fence around a subagent, and it fails open
+## 5. A hook is the only fence around a subagent, and by default it fails open
 
 Claude Code cannot limit a plugin's subagent to a folder through its definition, so the plugin uses
 a `PreToolUse` hook that refuses the proofreader every path outside a chunk folder. Two things about
 that fence:
 
 - When a hook cannot start or crashes, Claude Code lets the call through unless the hook sets
-  `"onFailure": "block"`. The guard does not yet, and it accepts any chunk folder rather than the
-  one the agent was given. Both are open findings in the [security audit](security.md).
+  `"onFailure": "block"`. The guard did not at 0.1.0, and it accepted any chunk folder rather
+  than the one the agent was given. Both were fixed the day after the release (findings 1 and 2 of
+  the [security audit](security.md)). The fix ties each agent run to its chunk through the
+  `agent_id` Claude Code puts in every call a subagent makes, which only a run inside Claude Code
+  could confirm: the guard's tests feed it the JSON they expect.
 - On a Mac without the Xcode command line tools, `/usr/bin/python3` is a stub that opens an install
   dialog. A hook that calls it on every tool call would raise that dialog on every tool call, so the
   guard asks `xcode-select` first.
@@ -120,6 +123,12 @@ history, and the logs of every Actions run, not only the files. Each of those wa
 private material before the switch. The release settings went in, in order, before the merge that
 releases: the repository public, the `pypi` environment limited to version tags, the rules on
 `main`, and the PyPI publisher confirmed field by field.
+
+The first upload was refused all the same: PyPI found no trusted publisher matching the release
+job, although every field had been checked. Saving the pending publisher again on PyPI and
+re-running the release job published 0.1.0; the cause is not known. The job had been built so that
+a re-run retries the release, and that made the failure cheap. Build a release so that it can be
+retried.
 
 ## 10. Read the annotation before debugging
 
