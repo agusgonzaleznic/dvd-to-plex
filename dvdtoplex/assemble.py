@@ -31,7 +31,28 @@ def _answers(chunk: pathlib.Path, numbers: list[int]) -> dict[int, dict]:
     if len(rows) != len(got) or sorted(got) != sorted(numbers):
         raise AssembleError(f"{chunk.parent.name}/{chunk.name}: answers.json must answer each of its "
                             f"{len(numbers)} cues exactly once")
+    for n, answer in sorted(got.items()):
+        if problem := _shape(answer["text"]):
+            raise AssembleError(f"{chunk.parent.name}/{chunk.name}: cue {n}'s text {problem}, "
+                                "which could change the SRT's cues")
     return got
+
+
+# Every character str.splitlines() breaks a line on, except "\n" (pinned by a test).
+BREAKS = frozenset("\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+
+
+def _shape(text: str) -> str | None:
+    """What in a cue's text could add or split an SRT cue, or None. An empty text stays empty."""
+    if not text.strip():
+        return None
+    if BREAKS.intersection(text):
+        return "has a line break other than a newline"
+    if any(not line.strip() for line in text.strip().split("\n")):
+        return "has a blank line"
+    if "-->" in text:
+        return "has an SRT timing arrow"
+    return None
 
 
 def verdict(salt: str, plant: dict, answer: dict) -> str:

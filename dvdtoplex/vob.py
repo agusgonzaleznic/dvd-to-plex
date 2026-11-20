@@ -5,10 +5,14 @@ set (VTS_nn_1.VOB to VTS_nn_9.VOB, each at most 1 GiB). Nothing here changes a b
 """
 from __future__ import annotations
 
+import os
 import pathlib
+import stat
 import struct
 from collections import Counter
 from collections.abc import Iterator
+
+from dvdtoplex import source
 
 SECTOR = 2048
 PACK = b"\x00\x00\x01\xba"
@@ -20,13 +24,21 @@ class VobError(ValueError):
 
 def title_vobs(video_ts: pathlib.Path, vts: int) -> list[pathlib.Path]:
     parts = [video_ts / f"VTS_{vts:02d}_{k}.VOB" for k in range(1, 10)]
-    parts = [p for p in parts if p.is_file()]
-    if not parts:
-        raise VobError(f"no title VOBs for title set {vts}")
+    found = []
     for p in parts:
-        if p.stat().st_size % SECTOR:
+        try:
+            st = os.lstat(p)          # lstat: a link named like a VOB is disc content, not followed
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(st.st_mode):
+            raise VobError(f"{p.name} is not a regular file; links and special files in a disc folder "
+                           "are refused")
+        if st.st_size % SECTOR:
             raise VobError(f"{p.name} is not a whole number of 2048-byte sectors")
-    return parts
+        found.append(p)
+    if not found:
+        raise VobError(f"no title VOBs for title set {vts}")
+    return found
 
 
 def read_sectors(parts: list[pathlib.Path], first: int, last: int) -> Iterator[bytes]:
@@ -34,10 +46,10 @@ def read_sectors(parts: list[pathlib.Path], first: int, last: int) -> Iterator[b
     start, end, base = first * SECTOR, (last + 1) * SECTOR, 0
     got = 0
     for p in parts:
-        size = p.stat().st_size
+        size = os.lstat(p).st_size
         lo, hi = max(start, base), min(end, base + size)
         if lo < hi:
-            with open(p, "rb") as f:
+            with source.open_regular(p, VobError) as f:
                 f.seek(lo - base)
                 left = hi - lo
                 while left:

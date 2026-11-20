@@ -74,7 +74,7 @@ def parse(data: bytes) -> Spu:
         x = y = x2 = y2 = None
         colours, alphas, fields = (0, 1, 2, 3), (0, 15, 15, 15), None
         start, stop, forced = 0.0, None, False
-        seq, seen = ctrl, set()
+        seq, seen = ctrl, set()             # a sequence ends the chain by pointing to itself or an earlier one
         while seq not in seen:
             seen.add(seq)
             delay, following = struct.unpack_from(">HH", data, seq)
@@ -102,6 +102,8 @@ def parse(data: bytes) -> Spu:
                     pos += struct.unpack_from(">H", data, pos)[0]
                 else:
                     raise SpuError(f"unknown control command {cmd:#x}")
+            if following not in seen and following <= pos:     # each sequence after the last: linear
+                raise SpuError(f"control sequence at {seq} points to {following}, which overlaps or goes back")
             seq = following
         if None in (x, y, x2, y2) or fields is None:
             raise SpuError("the control sequence sets no display area or no bitmap")

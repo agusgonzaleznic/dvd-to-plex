@@ -63,6 +63,8 @@ def _chapters(path: pathlib.Path, starts: list[float], end: float) -> None:
 
 def _cross_check(cut: pathlib.Path, sid: int, v0: int, units: list[dict], tmp: pathlib.Path) -> dict:
     """ffmpeg's own timing of the subtitle stream against the formula, on a short test mux."""
+    if not units:
+        return {"ran": False, "why": "no subtitle units", "ok": True}
     first = units[0]["cut_offset"]
     if first > CROSS_CHECK_BYTES:
         return {"ran": False, "why": f"first subtitle {first >> 20} MiB into the cut", "ok": True}
@@ -109,7 +111,11 @@ def remux(video_ts: pathlib.Path, info: TitleInfo, part: Part, work: pathlib.Pat
         args += ["-map", f"0:i:{aid:#x}"]
     media.run([*args, "-c", "copy", str(stage1)])
 
-    first = _first_pts(cut, {0xE0} | {aid for _, aid in audio})
+    needed = {0xE0} | {aid for _, aid in audio}
+    first = _first_pts(cut, needed)
+    if absent := sorted(needed - first.keys()):
+        raise RemuxError(f"title {info.number} part {part.number}: no timestamp found for stream "
+                         + ", ".join(f"{k:#x}" for k in absent) + " in the packs read")
     v0, t_v = first[0xE0], media.first_time(stage1, "v:0")
     anchor = []
     for k, (_, aid) in enumerate(audio):
@@ -119,7 +125,9 @@ def remux(video_ts: pathlib.Path, info: TitleInfo, part: Part, work: pathlib.Pat
                        "ok": abs(want - got) <= TOLERANCE})
     checks["anchor"] = {"audio": anchor, "ok": all(a["ok"] for a in anchor) if subs else True}
 
-    video = next(s for s in media.streams(stage1) if s["codec_type"] == "video")
+    video = next((s for s in media.streams(stage1) if s.get("codec_type") == "video"), None)
+    if video is None or not video.get("width") or not video.get("height"):
+        raise RemuxError(f"title {info.number} part {part.number}: ffmpeg wrote no sized video stream")
     sub_files = []
     for j, (s, sid) in enumerate(subs):
         sub, idx = work / f"sub{j}.sub", work / f"sub{j}.idx"

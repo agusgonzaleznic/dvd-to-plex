@@ -62,10 +62,18 @@ disc: a mounted disc, a folder holding `VIDEO_TS`, or an ISO image.
 - **Plain file reads only.** The disc is read with ordinary file reads; nothing in the package opens
   a network connection. Text recognition runs on the device with Apple's Vision framework.
 - **Refuses scrambled video.** `copy` checks a sample of packs per VOB file before it copies
-  anything. `remux` checks every pack of the copy, then every pack of each cut, before ffmpeg runs.
-  `inspect --full-scan` checks every pack.
-- **Refuses truncated disc tables** with a one-line error, records a truncated subtitle unit and
-  leaves it out, and stops on the first read error rather than skipping or padding.
+  anything, then every pack as it copies, and removes its copy on a hit. `remux` checks every pack
+  of the copy, then every pack of each cut, before ffmpeg runs. `inspect --full-scan` checks every
+  pack.
+- **Reads only regular files from a disc.** Every file inside a disc folder is opened without
+  following a link and must be a regular file; the path given on the command line is the only link
+  followed. An IFO file above 16 MiB is refused before it is read.
+- **Refuses malformed disc tables** with a one-line error: a truncated table, or one that points
+  past its own entries. It records a subtitle unit that is truncated or whose control sequences
+  overlap, and leaves it out. It stops on the first read error rather than skipping or padding.
+- **A private cache for the compiled helpers.** `~/Library/Caches/dvd-to-plex/bin` (or
+  `DVDTOPLEX_CACHE`), created with mode 0700. A cached helper is refused when it or the folder is a
+  link, someone else's, or writable by group or other.
 - **No shell.** Every external program gets an argument list.
 - **ISO images attach read-only**, hidden from Finder, and are detached when the command ends.
 - **Refuses to replace an existing output.** `copy`, `remux`, `name` and `embed` each stop when
@@ -113,14 +121,13 @@ decides whether and when each changes.
 - **The work folder keeps the OCR text before planting.** Comparing `WORK/ocr` with a chunk's
   `cues.json` shows the plants; only the guard keeps the proofreader out of it.
 - **Proofreader answers are trusted beyond the controls.** The controls check a few planted words
-  per chunk. The rest of the text, including any extra cue an answer adds, is taken as written.
+  per chunk, and an answer that would add or split a cue is refused. The rest of the text is taken
+  as written.
 - **Subtitle images can carry text aimed at the model.** The proofreader reads them by design.
-- **The OCR helper is cached in the work folder** and reused by name, without a content check. Keep
-  the work folder where only you can write.
-- **Symlinks in a disc folder are followed.** Inspect a disc folder from someone else before copying
-  it.
-- **`copy` and plain `inspect` sample the scrambling check.** `remux` always scans in full, so
-  nothing is remuxed from a disc with any scrambled pack.
+- **The OCR helper is checked, then run by its path.** Whoever can already write the user's own
+  cache folder could swap it in between; the folder's parents are not checked.
+- **Plain `inspect` samples the scrambling check.** It is a report; `--full-scan` checks every pack,
+  and `copy` and `remux` always do.
 - **External programs are found on `PATH`** and inherit the user's environment.
 - **Installs are not hash-locked for users.** `uv tool install dvd-to-plex` or `pipx install
   dvd-to-plex` resolve `plex-renamer>=1.0.2,<2` at install time. The hash locks cover CI and the

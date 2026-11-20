@@ -82,9 +82,9 @@ def _clock(seconds: float) -> str:
     return f"{cs // 360000:02d}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
 
 
-def _renderer(work: pathlib.Path) -> pathlib.Path:
+def _renderer() -> pathlib.Path:
     try:
-        return swiftc.build("render_text", work)
+        return swiftc.build("render_text")
     except swiftc.SwiftError as e:
         raise SampleError(str(e)) from e
 
@@ -149,7 +149,7 @@ def build(dest: pathlib.Path) -> dict:
         raise SampleError(f"{dest / 'VIDEO_TS'} already exists; pick an empty folder")
     with tempfile.TemporaryDirectory(prefix="dvdtoplex-sample-") as tmp:
         work = pathlib.Path(tmp)
-        renderer = _renderer(work)
+        renderer = _renderer()
         mpegs = {}
         for title in TITLES:
             mpg = work / f"t{title['title']}.mpg"

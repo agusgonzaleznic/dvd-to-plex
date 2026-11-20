@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from disc import sample_disc
-from dvdtoplex import copier, scramble
+from dvdtoplex import copier, scramble, source
 from dvdtoplex.cli import REFUSED, main
 
 
@@ -56,12 +56,15 @@ class Copy(unittest.TestCase):
                          ["VTS_01_1.VOB: changed since the copy", "VTS_02_0.BUP: missing"])
 
     def test_read_error_stops_and_leaves_no_partial_file(self):
-        real_open = open
+        real_open = source.open_regular
         calls = {"n": 0}
 
         class Failing(io.RawIOBase):
-            def __init__(self, path):
-                self.f = real_open(path, "rb", buffering=0)
+            def __init__(self, f):
+                self.f = f
+
+            def fileno(self):
+                return self.f.fileno()
 
             def read(self, n=-1):
                 calls["n"] += 1
@@ -73,12 +76,13 @@ class Copy(unittest.TestCase):
                 self.f.close()
                 super().close()
 
-        def fake_open(path, mode="r", *a, **k):
-            if "r" in mode and str(path).endswith("VTS_01_1.VOB"):
-                return Failing(path)
-            return real_open(path, mode, *a, **k)
+        def fake_open(path, *a, **k):
+            f = real_open(path, *a, **k)
+            # only the copy reads unbuffered; the up-front scramble sample must not be counted
+            copying = k.get("buffering") == 0 and str(path).endswith("VTS_01_1.VOB")
+            return Failing(f) if copying else f
 
-        with mock.patch("dvdtoplex.copier.open", fake_open, create=True):
+        with mock.patch("dvdtoplex.source.open_regular", fake_open):
             with self.assertRaises(copier.CopyError) as e:
                 copier.copy(self.video_ts, self.work)
         self.assertIn("read error in VTS_01_1.VOB at byte 1048576", str(e.exception))

@@ -16,6 +16,9 @@ from unittest import mock
 from disc import sample_disc
 from dvdtoplex import ifo, media, parts, remux, scramble, survey, vob
 from dvdtoplex.cli import main
+from disc import private_cache
+
+private_cache()
 
 
 def colours_drawn(mkv: pathlib.Path, seconds: float) -> set[str]:
@@ -209,6 +212,58 @@ class Command(Base):
         self.assertEqual(code, 1)
         self.assertIn("VTS_01_1.VOB: changed since the copy", err)
         self.assertFalse((work / "out" / "title_01.mkv").exists())
+
+    def strip_audio_timestamps(self, vobf: pathlib.Path) -> int:
+        """Clear the PTS flag of every AC-3 packet (private stream 1, substream 0x80-0x87)."""
+        d, hit = bytearray(vobf.read_bytes()), 0
+        for k in range(0, len(d), 2048):
+            pack = bytes(d[k:k + 2048])
+            if pack[:4] != vob.PACK or pack[4] >> 6 != 1:
+                continue
+            pos = 14 + (pack[13] & 7)
+            while pos + 6 <= len(pack) and pack[pos:pos + 3] == b"\x00\x00\x01":
+                sid, length = pack[pos + 3], int.from_bytes(pack[pos + 4:pos + 6], "big")
+                body = pos + 6
+                if sid == 0xBD and 0x80 <= vob.substream(pack[body:body + length]) <= 0x87:
+                    d[k + body + 1] &= 0x7F
+                    hit += 1
+                pos += 6 + length
+        vobf.write_bytes(bytes(d))
+        return hit
+
+    def test_a_stream_without_timestamps_is_refused_in_one_line(self):
+        work = self.tmp / "work"
+        self.assertEqual(self.cli("copy", self.video_ts, work)[0], 0)
+        self.assertGreater(self.strip_audio_timestamps(work / "VIDEO_TS" / "VTS_02_1.VOB"), 0)
+        (work / "copy.json").unlink()           # the copy was edited on purpose
+        code, out, err = self.cli("remux", work, "--titles", "2")
+        self.assertEqual(code, 1, out + err)
+        self.assertTrue(err.startswith("dvd-to-plex: title 2 part 1: no timestamp found for stream 0x80"), err)
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertFalse((work / "out" / "title_02.mkv").exists())
+        code, _, err = self.cli("remux", work, "--titles", "1")        # control: another title set, untouched
+        self.assertEqual((code, err), (0, ""), err)
+
+    def test_a_remux_without_a_video_stream_is_refused_in_one_line(self):
+        work = self.tmp / "work"
+        self.assertEqual(self.cli("copy", self.video_ts, work)[0], 0)
+        real = media.streams
+
+        def streams(path):
+            found = real(path)
+            return [s for s in found if s["codec_type"] != "video"] if path.name == "stage1.mkv" else found
+
+        with mock.patch.object(media, "streams", streams):
+            code, out, err = self.cli("remux", work, "--titles", "3")
+        self.assertEqual(code, 1, out + err)
+        self.assertTrue(err.startswith("dvd-to-plex: title 3 part 1: ffmpeg wrote no sized video stream"), err)
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertFalse((work / "out" / "title_03.mkv").exists())
+
+    def test_a_subtitle_stream_without_units_has_nothing_to_cross_check(self):
+        got = remux._cross_check(self.tmp / "cut.vob", 0x20, 0, [], self.tmp / "x.mkv")
+        self.assertEqual((got["ran"], got["ok"]), (False, True))
+
 
 if __name__ == "__main__":
     unittest.main()
