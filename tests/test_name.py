@@ -14,6 +14,9 @@ from unittest import mock
 from disc import remuxed_work
 from dvdtoplex import copier, namer
 from dvdtoplex.cli import main
+from disc import private_cache
+
+private_cache()
 
 FOLDER = "Movies/Example Film (2024) {imdb-tt0000001}"
 NAMES = {"category": "Movies", "title": "Example Film", "year": 2024, "imdb": "tt0000001",
@@ -146,6 +149,39 @@ class Name(Base):
                 with self.assertRaises(namer.PlaceError):
                     namer.plan(self.work, self.lib, names)
         self.assertEqual(self.lib_files(), [])
+
+    def test_a_file_ffprobe_cannot_read_is_refused_in_one_line(self):
+        (self.work / "subs").mkdir()
+        (self.work / "subs" / "title_01.s0.de.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHallo\n")
+        code, out, err = cli("name", self.work, self.lib, "--dry-run")           # control
+        self.assertEqual((code, err), (0, ""), err)
+        self.assertIn(".de.srt", out)
+        (self.work / "out" / "title_01.mkv").write_bytes(b"not a matroska file")
+        code, out, err = cli("name", self.work, self.lib, "--dry-run")
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("dvd-to-plex: ffprobe failed"), err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(self.lib_files(), [])
+
+    def test_ids_take_ascii_digits_only_and_no_trailing_newline(self):
+        for key, bad in (("tmdb", "\u0661\u0662\u0663"), ("tmdb", "123\n"), ("imdb", "tt0000001\n"),
+                         ("imdb", "tt\u0660\u0660\u0660\u0660\u0660\u0660\u0661")):
+            names = {k: v for k, v in NAMES.items() if k != "imdb"} | {key: bad}
+            with self.subTest(key=key, value=bad):
+                self.write_names(names)
+                code, _, err = cli("name", self.work, self.lib, "--dry-run")
+                self.assertEqual(code, 1)
+                self.assertIn(f"is not a {key} id", err)
+        self.write_names({k: v for k, v in NAMES.items() if k != "imdb"} | {"tmdb": "123"})   # control
+        self.assertEqual(cli("name", self.work, self.lib, "--dry-run")[0], 0)
+
+    def test_file_names_are_matched_by_ascii_digits_and_whole_name(self):
+        self.assertTrue(namer.STEM.match("title_01_part2"))
+        self.assertTrue(namer.SRT.match("title_01.s0.de.srt"))
+        for bad in ("title_\u0660\u0661", "title_01\n", "title_01_part\u0662"):
+            self.assertIsNone(namer.STEM.match(bad), bad)
+        for bad in ("title_01.s\u0660.de.srt", "title_01.s0.de.srt\n"):
+            self.assertIsNone(namer.SRT.match(bad), bad)
 
     def test_an_existing_file_is_never_overwritten(self):
         there = self.lib / PLACED["title_02"]

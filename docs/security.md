@@ -13,9 +13,10 @@ against the Claude Code hooks reference. The output of every reproduction, and t
 are kept outside the repository.
 
 **Status.** Findings 1 and 2 were fixed on 19 November 2026, after the 0.1.0 release, in the plugin,
-which installs from `main`, so no package release was needed. The rest are **open**. The maintainer
-decides what to fix and when. Each finding describes the code at the audited commit; findings 1
-and 2 end with a note on their fix.
+which installs from `main`, so no package release was needed. Findings 3 to 8 were fixed in the
+package on 20 November 2026, in release 0.1.1. Finding 9 is **open**: it describes the design, and
+the guard and the planted controls are what limit it. Each finding describes the code at the
+audited commit; each fixed one ends with a note on its fix and on what it leaves.
 
 ## Threat model
 
@@ -40,12 +41,12 @@ Severity is judged for a single-user local tool: what an attacker gains, and wha
 |---|---|---|---|---|
 | 1 | The guard allows any chunk-shaped path, not only the agent's own chunk | Low | fixed | yes (R5) |
 | 2 | The guard fails open when it cannot run or crashes | Medium | fixed | yes (R5, R6) |
-| 3 | A cached OCR helper in the work folder runs without any check | Low | open | yes (R4) |
-| 4 | Symlinks in the disc folder are followed; copy brings their targets in | Low | open | yes (R2) |
-| 5 | Some malformed disc tables crash with a traceback instead of a clean refusal | Low | open | yes (R1) |
-| 6 | Disc data can force large reads and quadratic parsing time | Low | open | yes (R7, R11) |
-| 7 | `copy` and default `inspect` check a sample of packs for scrambling | Informational | open | yes (R3) |
-| 8 | A proofreader answer can add SRT cues that no control checks | Low | open | yes (R9) |
+| 3 | A cached OCR helper in the work folder runs without any check | Low | fixed | yes (R4) |
+| 4 | Symlinks in the disc folder are followed; copy brings their targets in | Low | fixed | yes (R2) |
+| 5 | Some malformed disc tables crash with a traceback instead of a clean refusal | Low | fixed | yes (R1) |
+| 6 | Disc data can force large reads and quadratic parsing time | Low | fixed | yes (R7, R11) |
+| 7 | `copy` and default `inspect` check a sample of packs for scrambling | Informational | fixed (`copy`) | yes (R3) |
+| 8 | A proofreader answer can add SRT cues that no control checks | Low | fixed | yes (R9) |
 | 9 | Untrusted subtitle images reach a model whose reply goes to the main session | Informational | open | no (design reading) |
 
 ### 1. The guard allows any chunk-shaped path, not only the agent's own chunk
@@ -118,6 +119,18 @@ Anyone who can write the work folder gets code run as the user at the next `ocr`
 the work folder sits on a shared volume or is handed from one machine to another. On a private home
 folder it adds nothing an attacker does not already have.
 
+**Fixed on 20 November 2026, in 0.1.1.** The Swift helpers are now cached in a private per-user
+folder, `~/Library/Caches/dvd-to-plex/bin` (or `DVDTOPLEX_CACHE`), never in a work folder; `ocr` and
+`sample` both use it. Missing folders are created with mode 0700. Before a cached helper is used,
+and before one is built into the folder, the folder and the file are refused when either is a
+symbolic link, is not owned by the user, or can be written by group or other. A helper is built
+under a temporary name and renamed into place, so an interrupted build leaves nothing under the
+final name. `tests/test_ocr.py` covers each refusal (ownership by patching the user id) and a
+control that reuses a correct cache without rebuilding. What it leaves: the helper is checked, then
+run by its path, so whoever can already write the user's own cache folder could swap it in between;
+only the cache folder itself is checked, not its parents. A helper left in `WORK/ocr/bin` by 0.1.0
+is no longer read.
+
 ### 4. Symlinks in the disc folder are followed; copy brings their targets in
 
 `dvdtoplex/copier.py:69-70` selects files with `is_file()`, and `dvdtoplex/copier.py:37` opens them
@@ -131,6 +144,19 @@ The target must be readable by the user, and the copy stays in the user's own wo
 gain is small unless the work folder is shared later. A disc folder from someone else can also point
 a link at a special file or a very large file (see finding 6). Whether an attached ISO image can
 carry such links was not tested.
+
+**Fixed on 20 November 2026, in 0.1.1.** Every file read from inside a disc folder is opened
+without following a link (`O_NOFOLLOW`), and the open file must be a regular file, so nothing can
+be swapped in between the check and the read. That covers the files `copy` selects, both IFO
+readers, the VOB reader and the scrambling reader. A link, a folder or a special file named like a
+disc file stops the command with one line, and a name that is not printable is shown with
+`repr()`, since it is disc content. The path given on the command line is still trusted, even as a
+link; a `VIDEO_TS` folder found inside it must be a real folder. `tests/test_disc_files.py` covers
+each reader, a FIFO, a linked `VIDEO_TS` and a name with terminal escape codes, with controls on
+regular files. `name` copies through the same function when the library is on another file
+system, so there it refuses a linked file in `out/`; on the same file system it renames the file
+without opening it. Not tested: links inside an attached ISO image; its files go through the same
+reads.
 
 ### 5. Some malformed disc tables crash with a traceback instead of a clean refusal
 
@@ -148,6 +174,20 @@ and `dvdtoplex/namer.py:119` reads stream data through `dvdtoplex/media.py:15-19
 `MediaError` `dvdtoplex/cli.py:188` does not catch. The impact is an untidy exit, not a wrong
 output: no stage writes its result after such an error.
 
+**Fixed on 20 November 2026, in 0.1.1.** `survey` checks both numbers against their tables, 0
+included, and refuses an entry out of range with one line. `remux` refuses a stream with no
+timestamp in the packs it read, and a cut with no sized video stream; a subtitle stream with no
+units skips the timing cross-check. An ffmpeg failure in `ocr` is a one-line error with its exit
+status and at most 400 characters of its last output lines, and output from the text reader that
+cannot be read is one too. `name` catches `MediaError`; `inspect`, `copy`, `remux`, `ocr` and
+`name` catch a tool that fails or times out; and an answer from `hdiutil` that cannot be read is a
+one-line error. The ID and file-name patterns in `namer` take ASCII digits
+only and match the whole value, so a trailing newline is refused. Tests in `tests/test_inspect.py`,
+`test_remux.py`, `test_ocr.py`, `test_name.py`, `test_cli.py` and `test_disc_files.py` run each case
+and expect one line, with controls. What it leaves: `embed` does not catch a tool that times out,
+and a malformed report in the work folder can still raise in `name`. Both come from the user's own
+tools and work folder, not from the disc.
+
 ### 6. Disc data can force large reads and quadratic parsing time
 
 - `dvdtoplex/ifo.py:149-151` and `:191-193` read a whole IFO into memory before checking its 12-byte
@@ -163,6 +203,15 @@ output: no stage writes its result after such an error.
 
 Both are local denial of service. The user can stop the command.
 
+**Fixed on 20 November 2026, in 0.1.1.** Both IFO readers check the file's size and refuse one
+above 16 MiB before reading it, then check the 12-byte signature before reading the rest. In a
+subtitle unit, each control sequence must start after the end of the one before, unless it points
+back to a sequence already read, which ends the chain as before; anything else is refused as a unit
+that cannot be decoded, which `ocr` leaves out and counts. A 64 KB unit built like R7's took 9.6 s
+before the fix and is refused in about a millisecond after it. `tests/test_disc_files.py` and
+`tests/test_spu.py` cover both, with controls on a valid IFO and on units laid out as the sample
+disc's are.
+
 ### 7. `copy` and default `inspect` check a sample of packs for scrambling
 
 `dvdtoplex/scramble.py:42-57` checks a sample of about 4096 packs per VOB (fewer than 8192) unless
@@ -175,6 +224,15 @@ anything (`dvdtoplex/cli.py:70-72`) and every pack of each cut before ffmpeg run
 (`dvdtoplex/remux.py:93-95`), so nothing is remuxed. What may surprise is that `copy` can finish on
 such a disc; `README.md:95` and `README.md:96` state the sample for both.
 
+**Fixed on 20 November 2026, in 0.1.1, for `copy`.** `copy` keeps the sample as a quick first
+check, then tests every pack of every VOB as it copies it. On a scrambled pack it removes
+`WORK/VIDEO_TS`, which the run created (it refuses an existing one), and any work folder the run
+created, while empty; it writes no `copy.json` and exits 3 with the usual sentence. On a 512 MiB
+synthetic VOB read from the page cache, the check added about 0.1 s. Plain `inspect` still samples:
+it is a report, and `--full-scan` checks every pack. `tests/test_disc_files.py` covers a flagged
+pack off the sampling grid, one split across two reads, and the clean-up, plus a control: a clean
+VOB with a partial last pack is still copied.
+
 ### 8. A proofreader answer can add SRT cues that no control checks
 
 `dvdtoplex/assemble.py:28` accepts any string as a cue's text, and `dvdtoplex/assemble.py:72-74`
@@ -183,6 +241,15 @@ an extra cue: in R9, two cues went in and `embed`'s reader (`dvdtoplex/embed.py:
 three, one at a time no image showed. The planted controls score only the planted tokens
 (`dvdtoplex/assemble.py:37-43`). The result is wrong subtitle text in the user's library, not code
 execution.
+
+**Fixed on 20 November 2026, in 0.1.1.** `assemble` refuses an answer whose text could change the
+SRT's cues: a line break other than a newline (every character Python's `str.splitlines()` breaks
+a line on, which covers the universal newlines `embed`'s reader uses), a blank or whitespace-only
+line inside the text, or `-->`. It stops with one line that names the chunk and the cue, without
+quoting the text, as it does for any malformed answers file; `review-prep --redo` redoes the chunk.
+An empty text is still accepted. `tests/test_review.py` covers the R9 answer and each refused form,
+with controls that a multi-line text is written byte for byte as before. Not changed: the texts in
+a track's `overrides.json` reach the SRT unchecked; the user writes that file.
 
 ### 9. Untrusted subtitle images reach a model whose reply goes to the main session
 

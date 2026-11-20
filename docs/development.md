@@ -53,6 +53,10 @@ tool the tests need fails them when it is missing, except in the plugin tests: t
 skipped without the Xcode command line tools, and the guard runs on the system Python only when
 `/usr/bin/python3` exists.
 
+The tests point `DVDTOPLEX_CACHE` at a temporary folder, so they never compile a helper into
+`~/Library/Caches`. Run one suite at a time: with three suites reading text through Vision at once,
+its calls took more than a minute and some failed, while one suite alone ran clean.
+
 Some tests need more than the sample disc:
 
 - `tests/test_runner.py` checks what the machine can do: `swift` and Vision reading German text,

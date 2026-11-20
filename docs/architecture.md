@@ -72,10 +72,10 @@ checks that have none yet. Each stage names its controls. The stages `ocr`, `rev
   ISO is attached read-only with `hdiutil` while in use, then detached.
 - **Output:** a table, or with `--json` the survey: per title its set, length, chapters, audio and
   subtitle streams, palette and cells. The main title is the longest usable one.
-- **Checks:** the IFO signature and that the file is not truncated; scrambled packs (about 4096 per
-  VOB file spread evenly, fewer than 8192 in every case, or all with `--full-scan`). It marks a
-  title with several angles, with interleaved cells (seamless branching), with no cells or with VOB
-  files missing, and a title whose cells repeat another's as a duplicate.
+- **Checks:** disc files are regular files, not links; the IFO signature, size (16 MiB at most) and
+  length, and that titles point inside their tables; scrambled packs (about 4096 per VOB file spread
+  evenly, fewer than 8192, or all with `--full-scan`). It marks a title with several angles, with
+  interleaved cells, no cells or VOB files missing, and one whose cells repeat another's (duplicate).
 - **Refuses:** a scrambled pack (exit 3); a path that is not a disc, or a bad IFO (exit 1). A title
   with a problem is listed with a note, not refused.
 - **Controls:** `tests/test_inspect.py` scrambles a copy of the sample, cuts an IFO short, patches
@@ -89,12 +89,14 @@ checks that have none yet. Each stage names its controls. The stages `ocr`, `rev
 - **Output:** `WORK/VIDEO_TS` (IFO, BUP and VOB files) and `WORK/copy.json` with each file's name,
   size and SHA-256. Reads are unbuffered 1 MiB blocks, hashed as read, written to `<name>.part`,
   synced and renamed.
-- **Refuses or fails:** a scrambled pack, found by a sampled scan before anything is copied (exit 3,
-  work folder not created); an existing `WORK/VIDEO_TS`; less free space than the files plus 1 GiB;
-  any read error, reported with file and byte offset; a short read. A failure removes its `.part`
-  file and writes no `copy.json`. `copier.verify` re-hashes the copy for `remux`.
+- **Refuses or fails:** a link or special file; a scrambled pack, found by a sampled scan before
+  anything is copied (exit 3, no work folder) or in any pack while copying (exit 3, copy removed);
+  an existing `WORK/VIDEO_TS`; less free space than the files plus 1 GiB; any read error, with file
+  and byte offset; a short read. A failure removes its `.part` file and writes no `copy.json`.
+  `copier.verify` re-hashes the copy for `remux`.
 - **Controls:** `tests/test_copy.py` injects an I/O error on the second read (expects the stop, no
   partial file, no `copy.json`); scrambles a copy; alters a byte and removes a file; copies twice.
+  `tests/test_disc_files.py` feeds links, a FIFO and packs scrambled off the sample.
 
 ### 2.3 remux
 
@@ -198,10 +200,9 @@ from the file its remux report checked; otherwise the remux report; none when ne
 records hold what each stage checked and the size and SHA-256 of what it made.
 
 **Errors.** A stage raises its own error class, and `cli.py` prints `dvd-to-plex: <message>` and
-returns 1. Some errors are not caught and end in a Python traceback (still exit 1): a failing ffmpeg
-in `ocr`, ffprobe failing on an output during `name`, and some malformed disc tables (the [security
-audit](security.md), finding 5). `copy` and `remux` raise the scrambled-disc sentence as an ordinary
-error; `cli.py` compares the message with `scramble.REFUSAL`, prints it as it is and returns 3.
+returns 1. A tool that times out in `embed` still ends in a Python traceback (exit 1). `copy` and
+`remux` raise the scrambled-disc sentence as an ordinary error; `cli.py` compares the message with
+`scramble.REFUSAL`, prints it and returns 3.
 
 **How a run resumes.** There is no resume command. Each stage reads what the earlier ones left and
 refuses to overwrite its own result. `copy` is refused if `WORK/VIDEO_TS` exists. `remux` stops with
@@ -213,8 +214,7 @@ refused for a file already embedded, or after a run that stopped part way. `name
 
 ## 4. The refusal path for scrambled sectors
 
-dvd-to-plex reads only unscrambled DVD-Video. The README calls the stop by design, and says it will
-stay.
+dvd-to-plex reads only unscrambled DVD-Video; the README says the stop is by design and stays.
 
 **Detection (`scramble.py`).** Each 2048-byte pack of a VOB starts with an MPEG-2 pack header, and
 the first PES packet follows at 14 plus the pack's stuffing length. For video, audio and private
@@ -223,9 +223,9 @@ nonzero value means scrambled. Other packs, such as navigation packs, are not co
 
 **Where it runs.** `inspect` scans about 4096 packs per VOB file, spread evenly (fewer than 8192 in
 every case; all with `--full-scan`), before it prints the table. `copy` scans the same sample before
-the work folder is created or any file is copied. `remux` scans every pack of every VOB before any
-title, and every pack of each part's cut right after the cut is written. A sampled scan can miss a
-pack that falls between samples; the full scan of `remux` catches it before anything is built.
+the work folder is created, then every pack as it copies; on a hit it removes the copy. `remux` scans
+every pack of every VOB before any title, and every pack of each part's cut right after the cut is
+written. Only plain `inspect` can miss a pack that falls between samples.
 
 **On a hit** the command prints this sentence to stderr and exits with status 3:
 
@@ -274,10 +274,9 @@ local extra (the README cites reports on the Plex forum).
    its recorded SHA-256. Any difference stops everything with nothing moved.
 
 **The move.** `name.json` is written before the first move and rewritten after each, with `placed`
-set. Within one file system a file is renamed. Across file systems it is copied, the copy's SHA-256
-is checked against what was read and the report, and only then the source is removed. A destination
-that exists when its move starts stops the run; one that appears between that check and the rename
-is not detected.
+set. Within one file system a file is renamed; across file systems it is copied, the copy's SHA-256
+checked against what was read and the report, and only then the source removed. A destination that
+exists when its move starts stops the run; one that appears before the rename is not detected.
 
 **Controls.** `tests/test_name.py` makes plex-renamer read an edition out of the title and expects
 the refusal with nothing moved; feeds thirteen bad names files (counted in the test); fills a
@@ -293,8 +292,9 @@ track's tag as two letters, or `--lang`. ffprobe gives each packet's time and si
 the bytes with `-c copy`, and the sizes must add up. Times count from the video's first frame.
 
 **Decoding (`spu.py`).** A unit holds two run-length coded fields (even and odd lines) of 2-bit
-pixels and a control sequence: display area, palette colours and transparency, start and stop
-delays. A truncated or malformed unit is recorded on its cue, counted and left out of the SRT. The
+pixels and a chain of control sequences, each after the one before: display area, palette colours
+and transparency, start and stop delays. A truncated or malformed unit, or one whose sequences
+overlap or point back, is recorded on its cue, counted and left out of the SRT. The
 bitmap becomes an 8-bit grayscale PNG of dark text on white with a margin. A unit with no stop time
 shows until the next unit starts, or for 5 seconds if it is the last.
 
@@ -302,10 +302,10 @@ shows until the next unit starts, or for 5 seconds if it is the last.
 and image paths. It asks Vision (`VNRecognizeTextRequest`, accurate level) for the first language
 that starts with the two-letter code, exits with status 3 when there is none, and prints one JSON
 line per image, the lines top to bottom. `swiftc.build` (`swiftc.py`) compiles it with `swiftc -O`
-into `WORK/ocr/bin`, named `<name>-<first 12 hex digits of the source's SHA-256>`, and reuses it
-when it exists, so a changed source is rebuilt. The sources ship inside the package. A missing
-`swiftc` stops with a message to install the Xcode command line tools. The cache is per work folder;
-`sample` compiles its renderer into a temporary folder.
+into `~/Library/Caches/dvd-to-plex/bin` (or `DVDTOPLEX_CACHE`; mode 0700) as `<name>-<first 12 hex
+digits of the source's SHA-256>`, under a temporary name then renamed, and reuses it, so a changed
+source is rebuilt; `sample` shares the cache. A folder or helper that is a link, someone else's or
+writable by others is refused. A missing `swiftc` stops with a message to install the Xcode tools.
 
 **The two readings.** Each image is read twice: `first` as it is with Vision's language correction
 on, `second` at twice the size with it off. A cue's `agree` flag is true when the two texts are
@@ -358,7 +358,8 @@ folder's absolute path as its prompt. The agent reads `cues.json` and the sheets
 only `restored` passes. One plant that does not pass fails its whole chunk, which is redone, never
 patched. The message gives counts, never the cue or the word. A track passes only when it has chunks
 and all pass. `assemble` stops on an unreadable answers file, one that does not answer each cue
-exactly once, or a key for another attempt; exit 1, no SRT for that track.
+exactly once, a text that could add or split a cue (a blank line, a line break other than a
+newline, `-->`), or a key for another attempt; exit 1, no SRT for that track.
 
 **Redo and the SRT.** `review-prep --redo TRACK/N` plants fresh errors, so a second attempt cannot
 learn the first one's key; earlier answers are kept as `answers.attemptK.json`. The skill runs the
@@ -487,8 +488,7 @@ comment, a docstring or the README:
 
 ## 12. Not in this version
 
-- **Speech to subtitles and translation:** not in yet, as the README says; no command or module has
-  them.
+- **Speech to subtitles and translation:** no command or module has them.
 - **TV series, Blu-ray, any system but macOS, and titles with several angles or interleaved cells.**
 - **Any disc but the sample in the tests.**
 - **A failing control for every check.** These checks have no test that feeds them a bad input yet:

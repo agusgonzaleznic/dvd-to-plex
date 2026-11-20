@@ -6,8 +6,11 @@ header's sixth byte are its scrambling control; any nonzero value means the payl
 """
 from __future__ import annotations
 
+import os
 import pathlib
 from dataclasses import dataclass
+
+from dvdtoplex import source
 
 SECTOR = 2048
 REFUSAL = ("This disc's video is scrambled. dvd-to-plex reads only unscrambled DVD-Video, "
@@ -19,7 +22,7 @@ def _flagged(stream_id: int) -> bool:
     return stream_id == 0xBD or 0xC0 <= stream_id <= 0xEF
 
 
-def pack_scrambled(pack: bytes) -> bool | None:
+def pack_scrambled(pack: bytes | memoryview) -> bool | None:
     """True or False for a pack whose first PES carries scrambling bits; None for other packs."""
     if len(pack) < SECTOR or pack[:4] != _PACK:
         return None
@@ -39,12 +42,25 @@ class Count:
         self.scrambled += other.scrambled
 
 
-def count_file(path: pathlib.Path, *, most: int | None = None) -> Count:
-    """Check every pack of PATH, or about MOST packs spread evenly (all of them below 2 * MOST)."""
-    packs = path.stat().st_size // SECTOR
-    step = 1 if most is None or packs <= most else packs // most
+def count_packs(data: bytes | memoryview) -> Count:
+    """Check every whole pack in DATA; a trailing partial pack is ignored, as count_file does."""
+    view = memoryview(data)
     out = Count()
-    with open(path, "rb") as f:
+    for k in range(0, len(view) - SECTOR + 1, SECTOR):
+        flag = pack_scrambled(view[k:k + SECTOR])
+        if flag is not None:
+            out.checked += 1
+            out.scrambled += flag
+    return out
+
+
+def count_file(path: pathlib.Path, *, most: int | None = None) -> Count:
+    """Check every pack of PATH, or about MOST packs spread evenly (all of them below 2 * MOST).
+    A link or special file is refused with a SourceError."""
+    out = Count()
+    with source.open_regular(path) as f:
+        packs = os.fstat(f.fileno()).st_size // SECTOR
+        step = 1 if most is None or packs <= most else packs // most
         for k in range(0, packs, step):
             f.seek(k * SECTOR)
             flag = pack_scrambled(f.read(SECTOR))

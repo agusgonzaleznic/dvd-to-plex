@@ -2,6 +2,7 @@
 import argparse
 import json
 import pathlib
+import subprocess
 import sys
 
 from dvdtoplex import (__version__, assemble, copier, embed, ifo, media, namer, ocr, parts, remux,
@@ -25,7 +26,7 @@ def _inspect(args: argparse.Namespace) -> int:
     try:
         with source.opened(args.source) as video_ts:
             found = survey.survey(video_ts, most_per_file=None if args.full_scan else 4096)
-    except (source.SourceError, ifo.IfoError, OSError) as e:
+    except (source.SourceError, ifo.IfoError, OSError, subprocess.SubprocessError) as e:
         print(f"dvd-to-plex: {e}", file=sys.stderr)
         return 1
     if found.scramble.scrambled:
@@ -43,7 +44,7 @@ def _copy(args: argparse.Namespace) -> int:
         refused = str(e) == scramble.REFUSAL
         print(e if refused else f"dvd-to-plex: {e}", file=sys.stderr)
         return REFUSED if refused else 1
-    except (source.SourceError, OSError) as e:
+    except (source.SourceError, OSError, subprocess.SubprocessError) as e:
         print(f"dvd-to-plex: {e}", file=sys.stderr)
         return 1
     total = sum(f["bytes"] for f in manifest["files"])
@@ -95,7 +96,7 @@ def _remux(args: argparse.Namespace) -> int:
         refused = str(e) == scramble.REFUSAL
         print(e if refused else f"dvd-to-plex: {e}", file=sys.stderr)
         return REFUSED if refused else 1
-    except (ifo.IfoError, OSError, ValueError, RuntimeError) as e:
+    except (ifo.IfoError, OSError, ValueError, RuntimeError, subprocess.SubprocessError) as e:
         print(f"dvd-to-plex: {e}", file=sys.stderr)
         return 1
     return 1 if failed else 0
@@ -125,7 +126,8 @@ def _ocr(args: argparse.Namespace) -> int:
                 print(f"{mkv.stem} s{r['track']} ({r['language']}): {len(read)} cues read, "
                       f"{sum(c['agree'] for c in read)} where both readings agree"
                       + (f", {len(r['cues']) - len(read)} units not decoded" if len(read) < len(r["cues"]) else ""))
-    except (ocr.OcrError, swiftc.SwiftError, media.MediaError, OSError, ValueError) as e:
+    except (ocr.OcrError, swiftc.SwiftError, media.MediaError, OSError, ValueError,
+            subprocess.SubprocessError) as e:
         print(f"dvd-to-plex: {e}", file=sys.stderr)
         return 1
     return 0
@@ -185,7 +187,8 @@ def _name(args: argparse.Namespace) -> int:
     try:
         record = namer.place(args.work, args.library, args.names or args.work / "names.json",
                              dry_run=args.dry_run)
-    except (namer.PlaceError, copier.CopyError, OSError, ValueError) as e:
+    except (namer.PlaceError, copier.CopyError, media.MediaError, OSError, ValueError,
+            subprocess.SubprocessError) as e:
         print(f"dvd-to-plex: {e}", file=sys.stderr)
         return 1
     for f in record["files"]:

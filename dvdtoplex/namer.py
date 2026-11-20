@@ -23,9 +23,9 @@ from plexrenamer.planner import Planner
 
 from dvdtoplex import copier, lang, media
 
-STEM = re.compile(r"^title_(\d{2})(?:_part(\d+))?$")
-SRT = re.compile(r"^(?P<file>.+)\.s(?P<stream>\d+)\.(?P<lang>[a-z]{2})\.srt$")
-IDS = {"imdb": re.compile(r"^tt\d{7,10}$"), "tmdb": re.compile(r"^\d{1,10}$")}
+STEM = re.compile(r"^title_([0-9]{2})(?:_part([0-9]+))?\Z")
+SRT = re.compile(r"^(?P<file>.+)\.s(?P<stream>[0-9]+)\.(?P<lang>[a-z]{2})\.srt\Z")
+IDS = {"imdb": re.compile(r"tt[0-9]{7,10}"), "tmdb": re.compile(r"[0-9]{1,10}")}
 ROLES = ("movie", "extra", "skip")
 FOLDERS = sorted(set(util.EXTRAS_DIRS.values()))
 
@@ -51,7 +51,7 @@ def title_info(names: dict) -> naming.TitleInfo:
     ids = {}
     for key, pattern in IDS.items():
         if (v := names.get(key)) is not None:
-            if not isinstance(v, str) or not pattern.match(v):
+            if not isinstance(v, str) or not pattern.fullmatch(v):
                 raise PlaceError(f"names: {v!r} is not a {key} id")
             ids[key] = v
     if len(ids) > 1:

@@ -5,11 +5,15 @@ the publicly documented DVD-Video IFO layout.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import struct
 from dataclasses import dataclass, field
 
+from dvdtoplex import source
+
 SECTOR = 2048
+MAX_IFO = 16 << 20   # a real IFO is a few hundred KiB; anything above this is refused unread
 
 AUDIO_CODING = {0: "ac3", 2: "mpeg1", 3: "mpeg2", 4: "lpcm", 6: "dts"}
 # Audio code extension: what the track is for.
@@ -143,12 +147,24 @@ def _malformed(name: str):
     return wrap
 
 
+def _read_ifo(path: pathlib.Path, signature: bytes) -> bytes:
+    """The bytes of IFO PATH: opened without following a link, refused above MAX_IFO before it is
+    read, and its signature checked before the rest is read."""
+    name = source.safe_name(path.name)
+    with source.open_regular(path, IfoError, buffering=0) as f:
+        size = os.fstat(f.fileno()).st_size
+        if size > MAX_IFO:
+            raise IfoError(f"{name} is {size} bytes; an IFO above {MAX_IFO >> 20} MiB is refused")
+        head = f.read(len(signature))
+        if head != signature:
+            raise IfoError(f"{name} does not start with {signature.decode('ascii')}")
+        return head + f.read(size - len(head))
+
+
 @_malformed("VIDEO_TS.IFO")
 def read_vmg(video_ts: pathlib.Path) -> list[Title]:
     """The disc's title table (TT_SRPT) from VIDEO_TS.IFO."""
-    d = (video_ts / "VIDEO_TS.IFO").read_bytes()
-    if d[:12] != b"DVDVIDEO-VMG":
-        raise IfoError("VIDEO_TS.IFO does not start with DVDVIDEO-VMG")
+    d = _read_ifo(video_ts / "VIDEO_TS.IFO", b"DVDVIDEO-VMG")
     base = _u32(d, 0xC4) * SECTOR
     count = _u16(d, base)
     titles = []
@@ -188,9 +204,7 @@ def _pgc(d: bytes, base: int, number: int) -> Pgc:
 
 @_malformed("a VTS IFO")
 def read_vts(video_ts: pathlib.Path, number: int) -> TitleSet:
-    d = (video_ts / f"VTS_{number:02d}_0.IFO").read_bytes()
-    if d[:12] != b"DVDVIDEO-VTS":
-        raise IfoError(f"VTS_{number:02d}_0.IFO does not start with DVDVIDEO-VTS")
+    d = _read_ifo(video_ts / f"VTS_{number:02d}_0.IFO", b"DVDVIDEO-VTS")
     va = _u16(d, 0x200)
     standard = ("NTSC", "PAL")[(va >> 12) & 1]
     aspect = {0: "4:3", 3: "16:9"}.get((va >> 10) & 3, "unknown")

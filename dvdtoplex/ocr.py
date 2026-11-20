@@ -33,15 +33,24 @@ def units(mkv: pathlib.Path, track: int) -> list[tuple[float, bytes]]:
     """(time from the video's first frame, unit bytes) for each packet of subtitle track TRACK."""
     rows = json.loads(media.run(["ffprobe", "-v", "error", "-select_streams", f"s:{track}",
                                  "-show_entries", "packet=pts_time,size", "-of", "json", str(mkv)]))["packets"]
-    data = subprocess.run([*media.FFMPEG, "-i", str(mkv), "-map", f"0:s:{track}", "-c", "copy",
-                           "-f", "data", "-"], capture_output=True, check=True, timeout=3600).stdout
-    sizes = [int(r["size"]) for r in rows]
+    p = subprocess.run([*media.FFMPEG, "-i", str(mkv), "-map", f"0:s:{track}", "-c", "copy",
+                        "-f", "data", "-"], capture_output=True, timeout=3600)
+    if p.returncode != 0:
+        tail = " | ".join(p.stderr.decode("utf-8", "replace").strip().splitlines()[-4:])[-400:]
+        tail = "".join(c if c.isprintable() else "?" for c in tail)    # metadata can hold escape codes
+        raise OcrError(f"ffmpeg failed ({p.returncode}) reading track s:{track} of {mkv.name}: {tail}")
+    data = p.stdout
+    try:
+        sizes = [int(r["size"]) for r in rows]
+        times = [float(r["pts_time"]) for r in rows]
+    except (KeyError, TypeError, ValueError) as e:
+        raise OcrError(f"{mkv.name} track s:{track}: a packet has no usable size or time ({e!r})") from e
     if sum(sizes) != len(data):
         raise OcrError(f"{mkv.name} track s:{track}: packets add up to {sum(sizes)} bytes, data is {len(data)}")
     t0 = media.first_time(mkv, "v:0")
     out, pos = [], 0
-    for r, n in zip(rows, sizes):
-        out.append((float(r["pts_time"]) - t0, data[pos:pos + n]))
+    for t, n in zip(times, sizes):
+        out.append((t - t0, data[pos:pos + n]))
         pos += n
     return out
 
@@ -55,10 +64,13 @@ def read(binary: pathlib.Path, language: str, scale: str, correction: str,
                        capture_output=True, text=True, timeout=3600)
     if p.returncode != 0:
         raise OcrError(p.stderr.strip() or f"read_text exited {p.returncode}")
-    rows = [json.loads(line) for line in p.stdout.splitlines() if line.strip()]
-    if [r["image"] for r in rows] != list(map(str, images)):
-        raise OcrError("Vision's output does not line up with the images it was given")
-    return ["\n".join(r["lines"]) for r in rows]
+    try:
+        rows = [json.loads(line) for line in p.stdout.splitlines() if line.strip()]
+        if [r["image"] for r in rows] != list(map(str, images)):
+            raise OcrError("Vision's output does not line up with the images it was given")
+        return ["\n".join(r["lines"]) for r in rows]
+    except (KeyError, TypeError, ValueError) as e:
+        raise OcrError(f"Vision's output could not be read ({e!r})") from e
 
 
 def _same(a: str, b: str) -> bool:
@@ -103,7 +115,7 @@ def ocr_file(mkv: pathlib.Path, work: pathlib.Path, *, language: str | None = No
     """Read every VobSub track of MKV; LANGUAGE (two letters) overrides the tracks' own tags."""
     tracks = subtitle_tracks(mkv)
     out = work / "ocr" / mkv.stem
-    binary = swiftc.build("read_text", work / "ocr" / "bin")
+    binary = swiftc.build("read_text")
     results = []
     for k, s in enumerate(tracks):
         code = language or lang.two_letter((s.get("tags") or {}).get("language", ""))

@@ -92,11 +92,11 @@ through would turn CI red. Some checks have no such test yet; the [architecture 
 
 | Stage | What it checks | Broken inputs in its tests |
 |---|---|---|
-| `inspect` | Counts scrambled packs (about 4096 per VOB file, or all with `--full-scan`); flags titles with several angles or interleaved cells | A cut IFO file, a scrambled pack |
-| `copy` | Checks the same sample of packs for scrambling first; reads with plain file reads only; stops at the first read error, never skips or pads; a SHA-256 per file | A read error, a scrambled pack |
+| `inspect` | Counts scrambled packs (about 4096 per VOB file, or all with `--full-scan`); reads disc files only as regular files, never through a link; flags titles with several angles or interleaved cells | A cut IFO file, an oversized one, a title pointing past its table, a link, a scrambled pack |
+| `copy` | Checks the same sample of packs for scrambling first, then every pack as it copies; reads with plain file reads only and doesn't follow a link; stops at the first read error, never skips or pads; a SHA-256 per file | A read error, a link, a scrambled pack, one between the samples |
 | `remux` | The copy's SHA-256 again, when `copy` made it; every pack scanned for scrambling; video and audio packets hashed and compared with the disc; duration equal to the disc's tables; audio start offset kept; a full decode with no errors; each subtitle packet's bytes and time | A copy changed after `copy`, a stream one second short, corrupted video, a subtitle shifted in time |
-| `ocr` | Each subtitle read twice, as is and at twice the size without language correction, so later stages know where the readings agree | A blank image, and an accuracy floor on the sample |
-| `assemble` | Each chunk's planted errors: a chunk passes only if every one was put right | A planted error kept, a line cut |
+| `ocr` | Each subtitle read twice, as is and at twice the size without language correction, so later stages know where the readings agree | A blank image, a subtitle whose control sequences overlap, and an accuracy floor on the sample |
+| `assemble` | Each chunk's planted errors: a chunk passes only if every one was put right; no answer may add or split a cue | A planted error kept, a line cut, an answer with a blank line or a timing line |
 | `embed` | Every original stream keeps its packets and properties; each new text track reads back as its SRT | A cut or retagged stream, text that doesn't read back |
 | `name` | The names read back through plex-renamer; each file matches its remux or embed report before it moves | A file changed after remux, a name plex-renamer reads differently |
 | `verify` | Every file in the library re-hashed against its report; plex-renamer wants to move nothing | One file altered, one missing |
@@ -130,7 +130,7 @@ You need a Mac, Python 3.12 or newer, and:
 | Tool | Why | How |
 |---|---|---|
 | ffmpeg and ffprobe | Remuxing and every packet check | `brew install ffmpeg` |
-| Xcode command line tools | `swiftc` builds the small subtitle reader on first use; the plugin's guard runs on their Python | `xcode-select --install` |
+| Xcode command line tools | `swiftc` builds the small subtitle reader on first use, into `~/Library/Caches/dvd-to-plex`; the plugin's guard runs on their Python | `xcode-select --install` |
 
 Then install the command:
 
@@ -224,9 +224,9 @@ Then ask in plain words, for example *"Add the DVD in /Volumes/MY_FILM to my Ple
 - **The `subtitle-proofreader` agent**, on Sonnet. It corrects one chunk from its contact sheets
   and writes that chunk's `answers.json`. A chunk that fails is redone with fresh planted
   errors on Opus.
-- **A guard hook** that limits the proofreader to chunk files (cues, contact sheets and answers),
-  so it can't read the OCR output, the reports or the key. It has two known gaps, listed in the
-  [security audit](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/security.md).
+- **A guard hook** that holds the proofreader to its own chunk's files (cues, contact sheets and
+  answers), so it can't read the OCR output, the reports, another chunk or the key. When the guard
+  can't run, the proofreader's calls are refused.
 
 The checks live in the command, not in the plugin, so a stage the plugin runs can't skip one.
 
@@ -288,7 +288,7 @@ folder per disc.
   when you ask for them by number.
 - **A subtitle that can't be decoded is left out.** `ocr` says how many it skipped, and their
   lines are missing from the SRT.
-- **Subtitles from the disc only.** Speech to subtitles and translation aren't in yet.
+- **Subtitles from the disc only.** It doesn't make subtitles from speech or translate them.
 - **No Blu-ray.**
 - **Open findings.** The [security audit](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/security.md) and the
   [design review](https://github.com/agusgonzaleznic/dvd-to-plex/blob/main/docs/design-review.md) list what was found and not yet fixed.

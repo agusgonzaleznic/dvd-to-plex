@@ -1,7 +1,7 @@
 # Lessons learned
 
 A retrospective on building **dvd-to-plex**, from the hand-run process it came from to the 0.1.0
-release, written on 18 November 2026 and updated on 19 November, after the release.
+release and the 0.1.1 fixes, written on 18 November 2026 and updated on 19 and 20 November.
 
 **What was built:** a Python command-line tool with nine stages and a `sample` command, a Claude
 Code plugin with a skill, a proofreading agent and a guard hook, a synthetic sample disc made from
@@ -135,6 +135,19 @@ retried.
 Just before the release, `main` turned red with no change to the code: GitHub had no macOS runner
 free for fifteen minutes and cancelled the jobs, and a cancelled job reports as a failure. The run's
 annotations said so in one line. A re-run passed.
+
+## 11. Split work by files, and remember the machine is shared
+
+The six package findings of the audit were fixed by three agents at once, each in its own worktree
+and each owning a fixed list of files, so their changes came together without a conflict. Each fix
+came with a test that fails on the old code, and each changed module was then put back to its old
+version once more to see its tests fail. Two things the split did not plan for:
+
+- Three test suites reading text through Vision at the same time slowed its calls to more than a
+  minute and made some fail, on the unchanged code as well. One suite alone ran clean.
+- One agent kept the tests away from the real helper cache by setting a variable in the test module
+  that loads first. That worked only because of the load order; the setting moved to the fixture
+  that every test using the sample disc imports.
 
 ## The one-line version
 

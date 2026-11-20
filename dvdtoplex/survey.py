@@ -52,7 +52,14 @@ _AUDIO_BASE = {"ac3": 0x80, "dts": 0x88, "lpcm": 0xA0, "mpeg1": 0xC0, "mpeg2": 0
 
 
 def _title(t: ifo.Title, ts: ifo.TitleSet) -> TitleInfo:
+    where = f"title {t.number} (VTS_{t.title_set:02d})"
+    if not 1 <= t.title_in_set <= len(ts.title_pgcs):
+        raise ifo.IfoError(f"{where} is entry {t.title_in_set} of the title set's title table, "
+                           f"which has {len(ts.title_pgcs)} entries")
     number = ts.title_pgcs[t.title_in_set - 1]
+    if not 1 <= number <= len(ts.pgcs):
+        raise ifo.IfoError(f"{where} points at program chain {number}, but the title set has "
+                           f"{len(ts.pgcs)}")
     pgc = ts.pgcs[number - 1]
     audio, audio_ids = [], []
     for a in ts.audio:

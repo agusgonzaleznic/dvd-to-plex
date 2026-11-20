@@ -18,6 +18,11 @@ from dvdtoplex import assemble, review
 from dvdtoplex.cli import main
 
 TRACKS = {"title_01.s0": 1, "title_02.s0": 2}
+BREAKS = "\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"     # what str.splitlines() breaks on besides "\n"
+WRITTEN = ("1\n00:00:01,000 --> 00:00:02,604\nGuten\nMorgen, wie war die Reise?\n\n"
+           "2\n00:00:03,400 --> 00:00:05,402\nLang,\naber die Aussicht war schön.\n\n"
+           "3\n00:00:06,500 --> 00:00:08,502\nUm\nneun fährt der letzte Bus über die Brücke.\n\n"
+           "4\n00:00:09,200 --> 00:00:11,396\nDann\nmüssen wir uns beeilen!\n").encode()
 
 
 def cli(*args) -> tuple[int, str, str]:
@@ -220,6 +225,59 @@ class Assemble(Base):
             code, _, err = cli("assemble", self.work)
             self.assertEqual(code, 1)
             self.assertIn("exactly once", err)
+
+
+class CueShape(Base):
+    """An answer is model output: nothing in its text may add, split or end an SRT cue."""
+
+    def refused(self, inject) -> str:
+        self.answer("title_01.s0", text=lambda c, t: inject(t) if c["n"] == 2 else t)
+        self.answer("title_02.s0")
+        code, out, err = cli("assemble", self.work)
+        self.assertEqual(code, 1)
+        self.assertFalse((self.work / "subs").exists(), "no SRT is written")
+        self.assertNotIn("Eingeschmuggelt", out + err, "the report never quotes the answer")
+        return err
+
+    def test_a_blank_line_and_a_timing_line_are_refused(self):
+        err = self.refused(lambda t: t + "\n\n5\n00:00:09,000 --> 00:00:10,000\nEingeschmuggelt")
+        self.assertIn("title_01.s0/chunk_01: cue 2's text has a blank line, which could change the SRT's cues", err)
+
+    def test_each_form_that_could_change_the_cues_is_refused(self):
+        forms = {**{f"break {ord(b):#x}": (b, "a line break other than a newline") for b in BREAKS},
+                 "crlf": ("\r\n", "a line break other than a newline"),
+                 "crlf twice": ("\r\n\r\n", "a line break other than a newline"),
+                 "empty line": ("\n\n", "a blank line"),
+                 "spaces and a tab": ("\n \t \n", "a blank line"),
+                 "no-break space": ("\n\u00a0\n", "a blank line"),
+                 "arrow": (" --> ", "an SRT timing arrow")}
+        for name, (form, problem) in forms.items():
+            with self.subTest(form=name):
+                err = self.refused(lambda t: t + form + "Eingeschmuggelt")
+                self.assertIn(f"cue 2's text has {problem}", err)
+
+    def test_multi_line_text_is_written_as_before(self):
+        self.answer("title_01.s0", text=lambda c, t: "  " + t.replace(" ", "\n", 1) + " \n")
+        self.answer("title_02.s0")
+        code, _, err = cli("assemble", self.work)
+        self.assertEqual((code, err), (0, ""), err)
+        self.assertEqual((self.work / "subs" / "title_01.s0.de.srt").read_bytes(), WRITTEN)
+
+    def test_a_whitespace_only_text_still_counts_as_empty(self):
+        kept = next(c["n"] for c in self.cues("title_01.s0") if c["n"] not in self.planted("title_01.s0"))
+        self.answer("title_01.s0", text=lambda c, t: "\r\n \u2028\n" if c["n"] == kept else t)
+        self.answer("title_02.s0")
+        code, _, err = cli("assemble", self.work)
+        self.assertEqual((code, err), (0, ""), err)
+        report = json.loads((self.work / "review" / "assemble.json").read_text(encoding="utf-8"))
+        self.assertEqual((report[0]["cues"], report[0]["empty"]), (3, 1))
+
+
+class Breaks(unittest.TestCase):
+    def test_breaks_are_every_line_break_but_the_newline(self):
+        found = {chr(c) for c in range(0x110000) if len(f"a{chr(c)}a".splitlines()) > 1}
+        self.assertEqual(found - {"\n"}, set(BREAKS))
+        self.assertEqual(assemble.BREAKS, set(BREAKS))
 
 
 if __name__ == "__main__":

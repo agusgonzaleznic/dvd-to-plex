@@ -3,6 +3,7 @@ import atexit
 import collections
 import contextlib
 import io
+import os
 import pathlib
 import shutil
 import subprocess
@@ -14,6 +15,23 @@ from dvdtoplex.cli import main
 _built: tuple[pathlib.Path, dict] | None = None
 _remuxed: pathlib.Path | None = None
 _ocred: pathlib.Path | None = None
+_cache: tempfile.TemporaryDirectory | None = None
+
+
+def private_cache() -> pathlib.Path:
+    """Point DVDTOPLEX_CACHE at a private temp folder for this whole test run, so no test builds a
+    Swift helper into the real ~/Library/Caches. Every test module that can reach swiftc.build
+    calls this when it is imported, and this module does too, so every module that builds the sample
+    disc is covered whatever order the modules load in."""
+    global _cache
+    if _cache is None:
+        _cache = tempfile.TemporaryDirectory(prefix="dvdtoplex-cache-")      # mkdtemp: mode 0700
+        atexit.register(_cache.cleanup)
+    os.environ["DVDTOPLEX_CACHE"] = _cache.name
+    return pathlib.Path(_cache.name)
+
+
+private_cache()
 
 
 def sample_disc() -> tuple[pathlib.Path, dict]:

@@ -13,6 +13,9 @@ import unittest
 from disc import sample_disc
 from dvdtoplex import scramble, source, survey
 from dvdtoplex.cli import REFUSED, main
+from disc import private_cache
+
+private_cache()
 
 SECTOR = 2048
 
@@ -92,6 +95,56 @@ class Survey(Copy):
         self.patch_ifo("VTS_02_0", same)
         s = survey.survey(self.video_ts)
         self.assertEqual([t.duplicate_of for t in s.titles], [None, None, 2])
+
+
+def title_entry(d, k: int) -> int:
+    """Byte offset of title K's entry (1-based) in VIDEO_TS.IFO's title table."""
+    return struct.unpack_from(">I", d, 0xC4)[0] * SECTOR + 8 + 12 * (k - 1)
+
+
+def ptt_entry(d, t: int) -> int:
+    """Byte offset of the PGC number of title T's (1-based) first chapter in a VTS IFO."""
+    ptt = struct.unpack_from(">I", d, 0xC8)[0] * SECTOR
+    return ptt + struct.unpack_from(">I", d, ptt + 8 + 4 * (t - 1))[0]
+
+
+class Malformed(Copy):
+    """Tables that point outside themselves are refused in one line, never a traceback."""
+
+    def refused(self, command: str, code: int = 1) -> str:
+        shown, out, err = run_cli(command, self.root)
+        self.assertEqual((shown, out), (code, ""), (command, err))
+        self.assertTrue(err.startswith("dvd-to-plex: "), err)
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertNotIn("Traceback", err)
+        return err
+
+    def test_a_title_entry_outside_the_title_set_table_is_refused(self):
+        for value in (0, 3, 200):      # VTS_02 holds two titles; 0 once read as the last one
+            self.setUp()
+            with self.subTest(title_in_set=value):
+                self.patch_ifo("VIDEO_TS", lambda d: d.__setitem__(title_entry(d, 3) + 7, value))
+                for command in ("inspect", "remux"):
+                    err = self.refused(command)
+                    self.assertIn("title 3", err)
+                    self.assertIn(f"entry {value}", err)
+        self.assertFalse((self.root / "out").exists())
+
+    def test_a_chapter_entry_pointing_at_no_program_chain_is_refused(self):
+        for value in (0, 4, 999):      # VTS_02 holds three program chains
+            self.setUp()
+            with self.subTest(pgc=value):
+                self.patch_ifo("VTS_02_0", lambda d: struct.pack_into(">H", d, ptt_entry(d, 2), value))
+                for command in ("inspect", "remux"):
+                    err = self.refused(command)
+                    self.assertIn(f"program chain {value}", err)
+
+    def test_control_valid_values_in_the_same_places_still_work(self):
+        self.patch_ifo("VIDEO_TS", lambda d: d.__setitem__(title_entry(d, 3) + 7, 2))   # as authored
+        self.patch_ifo("VTS_02_0", lambda d: struct.pack_into(">H", d, ptt_entry(d, 1), 1))
+        self.assertEqual(run_cli("inspect", self.root)[0], 0)
+        code, out, err = run_cli("remux", self.root, "--titles", "3")
+        self.assertEqual((code, err), (0, ""), out + err)
 
 
 class Scrambled(Copy):
